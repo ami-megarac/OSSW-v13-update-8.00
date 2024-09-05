@@ -1,0 +1,60 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "MCA_CORE": {
+        "RecordEnable": true,
+        "SkipOnFail": true,
+        "LoopOnCore": true,
+        "LoopOnThread": true,
+        "SkipCrashedCores": true,
+        "MaxTimeSec": 50,
+        "RootAtLevel":4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/MCA/core%d/thread%d",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdIAMSR": [
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x401"],"Output": {"Size": 8, "Name":["mc0_status", "MC0"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x400"],"Output": {"Size": 8, "Name":["mc0_ctl", "MC0"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x402"],"Output": {"Size": 8, "Name":["mc0_addr", "MC0"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x403"],"Output": {"Size": 8, "Name":["mc0_misc", "MC0"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x280"],"Output": {"Size": 8, "Name":["mc0_ctl2", "MC0"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x405"],"Output": {"Size": 8, "Name":["mc1_status", "MC1"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x404"],"Output": {"Size": 8, "Name":["mc1_ctl", "MC1"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x406"],"Output": {"Size": 8, "Name":["mc1_addr", "MC1"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x407"],"Output": {"Size": 8, "Name":["mc1_misc", "MC1"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x281"],"Output": {"Size": 8, "Name":["mc1_ctl2", "MC1"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x409"],"Output": {"Size": 8, "Name":["mc2_status", "MC2"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x408"],"Output": {"Size": 8, "Name":["mc2_ctl", "MC2"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40a"],"Output": {"Size": 8, "Name":["mc2_addr", "MC2"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40b"],"Output": {"Size": 8, "Name":["mc2_misc", "MC2"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x282"],"Output": {"Size": 8, "Name":["mc2_ctl2", "MC2"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40d"],"Output": {"Size": 8, "Name":["mc3_status", "MC3"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40c"],"Output": {"Size": 8, "Name":["mc3_ctl", "MC3"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40e"],"Output": {"Size": 8, "Name":["mc3_addr", "MC3"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x40f"],"Output": {"Size": 8, "Name":["mc3_misc", "MC3"]}},
+              {"Params": ["Target", "(CORE*2)+THREAD", "0x283"],"Output": {"Size": 8, "Name":["mc3_ctl2", "MC3"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

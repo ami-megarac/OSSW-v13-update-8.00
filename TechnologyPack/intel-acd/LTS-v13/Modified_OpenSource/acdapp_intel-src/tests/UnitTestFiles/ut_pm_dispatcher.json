@@ -1,0 +1,66 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "PowerManagement_Dispatcher": {
+        "RecordEnable": true,
+        "SkipOnFail": true,
+        "LoopOnCpu": true,
+        "MaxTimeSec": 1,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/PM_info/",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdPkgConfig": [
+              {"Params": ["Target", 88, "0xb", 4],"Output": {"Name": ["shared_pma_idx0", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x80b", 4],"Output": {"Name": ["shared_pma_idx1", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x100b", 4],"Output": {"Name": ["shared_pma_idx2", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x180b", 4],"Output": {"Name": ["shared_pma_idx3", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x200b", 4],"Output": {"Name": ["shared_pma_idx4", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x280b", 4],"Output": {"Name": ["shared_pma_idx5", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x300b", 4],"Output": {"Name": ["shared_pma_idx6", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x380b", 4],"Output": {"Name": ["shared_pma_idx7", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x400b", 4],"Output": {"Name": ["shared_pma_idx8", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x480b", 4],"Output": {"Name": ["shared_pma_idx9", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x10b", 4],"Output": {"Name": ["sequencer_idx0", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x90b", 4],"Output": {"Name": ["sequencer_idx1", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x110b", 4],"Output": {"Name": ["sequencer_idx2", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x190b", 4],"Output": {"Name": ["sequencer_idx3", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x210b", 4],"Output": {"Name": ["sequencer_idx4", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x290b", 4],"Output": {"Name": ["sequencer_idx5", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x310b", 4],"Output": {"Name": ["sequencer_idx6", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x390b", 4],"Output": {"Name": ["sequencer_idx7", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x410b", 4],"Output": {"Name": ["sequencer_idx8", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x20b", 4],"Output": {"Name": ["cfc_pma_idx0", "dispatcher"]}},
+              {"Params": ["Target", 88, "0xa0b", 4],"Output": {"Name": ["cfc_pma_idx1", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x120b", 4],"Output": {"Name": ["cfc_pma_idx2", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x1a0b", 4],"Output": {"Name": ["cfc_pma_idx3", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x220b", 4],"Output": {"Name": ["cfc_pma_idx4", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x2a0b", 4],"Output": {"Name": ["cfc_pma_idx5", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x320b", 4],"Output": {"Name": ["cfc_pma_idx6", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x3a0b", 4],"Output": {"Name": ["cfc_pma_idx7", "dispatcher"]}},
+              {"Params": ["Target", 88, "0x420b", 4],"Output": {"Name": ["cfc_pma_idx8", "dispatcher"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

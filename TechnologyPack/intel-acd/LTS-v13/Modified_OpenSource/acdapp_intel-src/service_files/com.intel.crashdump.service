@@ -1,0 +1,11 @@
+[Unit]
+Description=Intel BMC CPU Crashdump
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/crashdump
+Type=dbus
+BusName=com.intel.crashdump
+
+[Install]
+WantedBy=multi-user.target

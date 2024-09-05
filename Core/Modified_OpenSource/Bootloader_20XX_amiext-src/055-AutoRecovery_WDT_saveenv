@@ -1,0 +1,33 @@
+diff -Naur uboot_orig/oem/ami/fmh/cmd_fmh.c uboot/oem/ami/fmh/cmd_fmh.c
+--- uboot_orig/oem/ami/fmh/cmd_fmh.c	2022-04-23 15:28:53.640049187 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2022-04-23 15:33:32.120049091 +0530
+@@ -1005,7 +1005,7 @@
+ #ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
+ void BMCAutoRecovery (void)
+ {
+-    char *pStr;
++    char *pStr=NULL, *gsEnv=NULL;
+     char value[2] = {0};
+     u8 force_recovery = 0, imgheadererr = 0, bootretry = CONFIG_SPX_FEATURE_BMC_FIRMWARE_REBOOT_RETRY_COUNT, currentbootretry = 0;
+     unsigned long wdt2TimeoutStatus = 0;
+@@ -1080,6 +1080,8 @@
+     else
+     {
+         Enable_watchdog(&g_wdt_reset_status);
++	
++	gsEnv = env_get("goldenside");
+         if (g_wdt_reset_status & 0x00000002)
+         {
+             env_set("goldenside", "1");
+@@ -1089,7 +1091,10 @@
+             env_set("goldenside", "0");
+         }
+ 
+-        env_save();
++	if(gsEnv != env_get("goldenside"))
++	{
++        	env_save();
++	}
+ 
+     }
+ 

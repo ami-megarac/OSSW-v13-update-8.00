@@ -1,0 +1,1971 @@
+--- uboot_org/arch/arm/dts/ast2600.dtsi	2022-06-06 17:35:30.150602514 +0800
++++ uboot/arch/arm/dts/ast2600.dtsi	2022-06-12 01:24:47.933450984 +0800
+@@ -304,6 +304,30 @@
+ 
+ 			};
+ 
++			hace: hace@1e6d0000 {
++				compatible = "aspeed,ast2600-hace";
++				reg = <0x1e6d0000 0x200>;
++				interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>;
++				clocks = <&scu ASPEED_CLK_GATE_YCLK>;
++				clock-names = "yclk";
++				status = "disabled";
++			};
++
++			acry: acry@1e6fa000 {
++				compatible = "aspeed,ast2600-acry";
++				reg = <0x1e6fa000 0x1000>;
++				interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>;
++#ifdef ASPEED_CLK_GATE_RSAECCCLK				
++				clocks = <&scu ASPEED_CLK_GATE_RSAECCCLK>;
++#else
++#ifdef ASPEED_CLK_GATE_RSACLK		
++				clocks = <&scu ASPEED_CLK_GATE_RSACLK>;
++#endif
++#endif				
++				clock-names = "rsaeccclk";
++				status = "disabled";
++			};
++
+ 			smp-memram@0 {
+ 				compatible = "aspeed,ast2600-smpmem", "syscon";
+ 				reg = <0x1e6e2180 0x40>;
+diff -Naur uboot_org/arch/arm/mach-aspeed/ast2600/spl_boot.c uboot/arch/arm/mach-aspeed/ast2600/spl_boot.c
+--- uboot_org/arch/arm/mach-aspeed/ast2600/spl_boot.c	2022-06-06 17:39:32.955310220 +0800
++++ uboot/arch/arm/mach-aspeed/ast2600/spl_boot.c	2022-06-06 17:08:09.160897027 +0800
+@@ -11,10 +11,16 @@
+ #include <xyzModem.h>
+ #include <asm/io.h>
+ #include <asm/arch/aspeed_verify.h>
+-
++#ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
++extern int hrot_start_spl(void);
++#endif
+ static int aspeed_spl_ram_load_image(struct spl_image_info *spl_image,
+ 				      struct spl_boot_device *bootdev)
+ {
++#ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
++	if (hrot_start_spl() != 0)
++		return -EPERM;
++#endif
+ 	spl_image->os = IH_OS_U_BOOT;
+ 	spl_image->name = "U-Boot";
+ 	spl_image->entry_point = CONFIG_ASPEED_UBOOT_SPI_BASE;
+diff -Naur uboot_org/arch/arm/mach-aspeed/ast2600/spl.c uboot/arch/arm/mach-aspeed/ast2600/spl.c
+--- uboot_org/arch/arm/mach-aspeed/ast2600/spl.c	2022-06-06 17:39:32.955310220 +0800
++++ uboot/arch/arm/mach-aspeed/ast2600/spl.c	2022-06-06 17:08:09.160897027 +0800
+@@ -26,7 +26,9 @@
+ #ifndef CONFIG_SPL_TINY
+ 	spl_early_init();
+ 	timer_init();
++#if 0	//disable for code size reducing
+ 	preloader_console_init();
++#endif	
+ 	dram_init();
+ 	aspeed_mmc_init();
+ #endif
+@@ -47,7 +49,6 @@
+ 	default:
+ 		break;
+ 	}
+-
+ 	return BOOT_DEVICE_NONE;
+ }
+ 
+diff -Naur uboot_org/common/hash.c uboot/common/hash.c
+--- uboot_org/common/hash.c	2022-06-06 17:35:48.522352971 +0800
++++ uboot/common/hash.c	2022-06-06 17:41:42.689555135 +0800
+@@ -27,6 +27,7 @@
+ #include <u-boot/crc.h>
+ #include <u-boot/sha1.h>
+ #include <u-boot/sha256.h>
++#include <u-boot/sha512.h>
+ #include <u-boot/md5.h>
+ 
+ #if defined(CONFIG_SHA1) && !defined(CONFIG_SHA_PROG_HW_ACCEL)
+@@ -85,6 +86,63 @@
+ }
+ #endif
+ 
++#if defined(CONFIG_SHA384) && !defined(CONFIG_SHA_PROG_HW_ACCEL)
++static int hash_init_sha384(struct hash_algo *algo, void **ctxp)
++{
++	sha512_context *ctx = malloc(sizeof(sha512_context));
++	sha384_starts(ctx);
++	*ctxp = ctx;
++	return 0;
++}
++
++static int hash_update_sha384(struct hash_algo *algo, void *ctx,
++			      const void *buf, unsigned int size, int is_last)
++{
++	sha384_update((sha512_context *)ctx, buf, size);
++	return 0;
++}
++
++static int hash_finish_sha384(struct hash_algo *algo, void *ctx, void
++			      *dest_buf, int size)
++{
++	if (size < algo->digest_size)
++		return -1;
++
++	sha384_finish((sha512_context *)ctx, dest_buf);
++	free(ctx);
++	return 0;
++}
++#endif
++
++#if defined(CONFIG_SHA512) && !defined(CONFIG_SHA_PROG_HW_ACCEL)
++static int hash_init_sha512(struct hash_algo *algo, void **ctxp)
++{
++	sha512_context *ctx = malloc(sizeof(sha512_context));
++	sha512_starts(ctx);
++	*ctxp = ctx;
++	return 0;
++}
++
++static int hash_update_sha512(struct hash_algo *algo, void *ctx,
++			      const void *buf, unsigned int size, int is_last)
++{
++	sha512_update((sha512_context *)ctx, buf, size);
++	return 0;
++}
++
++static int hash_finish_sha512(struct hash_algo *algo, void *ctx, void
++			      *dest_buf, int size)
++{
++	if (size < algo->digest_size)
++		return -1;
++
++	sha512_finish((sha512_context *)ctx, dest_buf);
++	free(ctx);
++	return 0;
++}
++#endif
++
++
+ static int hash_init_crc16_ccitt(struct hash_algo *algo, void **ctxp)
+ {
+ 	uint16_t *ctx = malloc(sizeof(uint16_t));
+@@ -186,6 +244,48 @@
+ #endif
+ 	},
+ #endif
++#ifdef CONFIG_SHA384
++	{
++		.name		= "sha384",
++		.digest_size	= SHA384_SUM_LEN,
++		.chunk_size	= CHUNKSZ_SHA384,
++#ifdef CONFIG_SHA_HW_ACCEL
++		.hash_func_ws	= hw_sha384,
++#else
++		.hash_func_ws	= sha384_csum_wd,
++#endif
++#ifdef CONFIG_SHA_PROG_HW_ACCEL
++		.hash_init	= hw_sha_init,
++		.hash_update	= hw_sha_update,
++		.hash_finish	= hw_sha_finish,
++#else
++		.hash_init	= hash_init_sha384,
++		.hash_update	= hash_update_sha384,
++		.hash_finish	= hash_finish_sha384,
++#endif
++	},
++#endif
++#ifdef CONFIG_SHA512
++	{
++		.name		= "sha512",
++		.digest_size	= SHA512_SUM_LEN,
++		.chunk_size	= CHUNKSZ_SHA512,
++#ifdef CONFIG_SHA_HW_ACCEL
++		.hash_func_ws	= hw_sha512,
++#else
++		.hash_func_ws	= sha512_csum_wd,
++#endif
++#ifdef CONFIG_SHA_PROG_HW_ACCEL
++		.hash_init	= hw_sha_init,
++		.hash_update	= hw_sha_update,
++		.hash_finish	= hw_sha_finish,
++#else
++		.hash_init	= hash_init_sha512,
++		.hash_update	= hash_update_sha512,
++		.hash_finish	= hash_finish_sha512,
++#endif
++	},
++#endif
+ 	{
+ 		.name		= "crc16-ccitt",
+ 		.digest_size	= 2,
+@@ -208,7 +308,8 @@
+ 
+ /* Try to minimize code size for boards that don't want much hashing */
+ #if defined(CONFIG_SHA256) || defined(CONFIG_CMD_SHA1SUM) || \
+-	defined(CONFIG_CRC32_VERIFY) || defined(CONFIG_CMD_HASH)
++	defined(CONFIG_CRC32_VERIFY) || defined(CONFIG_CMD_HASH) || \
++	defined(CONFIG_SHA384) || defined(CONFIG_SHA512)
+ #define multi_hash()	1
+ #else
+ #define multi_hash()	0
+diff -Naur uboot_org/common/spl/Kconfig uboot/common/spl/Kconfig
+--- uboot_org/common/spl/Kconfig	2022-06-06 17:35:48.810349060 +0800
++++ uboot/common/spl/Kconfig	2022-06-06 17:41:42.693555081 +0800
+@@ -284,7 +284,7 @@
+ 	  secure as it is possible (with a brute-force attack) to adjust the
+ 	  image while still retaining the same MD5 hash value. For secure
+ 	  applications where images may be changed maliciously, you should
+-	  consider SHA1 or SHA256.
++	  consider SHA256 or SHA384.
+ 
+ config SPL_SHA1_SUPPORT
+ 	bool "Support SHA1"
+@@ -295,8 +295,8 @@
+ 	  checksum is a 160-bit (20-byte) hash value used to check that the
+ 	  image contents have not been corrupted or maliciously altered.
+ 	  While SHA1 is fairly secure it is coming to the end of its life
+-	  due to the expanding computing power avaiable to brute-force
+-	  attacks. For more security, consider SHA256.
++	  due to the expanding computing power available to brute-force
++	  attacks. For more security, consider SHA256 or SHA384.
+ 
+ config SPL_SHA256_SUPPORT
+ 	bool "Support SHA256"
+@@ -305,12 +305,28 @@
+ 	help
+ 	  Enable this to support SHA256 in FIT images within SPL. A SHA256
+ 	  checksum is a 256-bit (32-byte) hash value used to check that the
+-	  image contents have not been corrupted. SHA256 is recommended for
+-	  use in secure applications since (as at 2016) there is no known
+-	  feasible attack that could produce a 'collision' with differing
+-	  input data. Use this for the highest security. Note that only the
+-	  SHA256 variant is supported: SHA512 and others are not currently
+-	  supported in U-Boot.
++	  image contents have not been corrupted.
++
++config SPL_SHA384_SUPPORT
++	bool "Support SHA384"
++	depends on SPL_FIT
++	select SHA384
++	select SHA512_ALGO
++	help
++	  Enable this to support SHA384 in FIT images within SPL. A SHA384
++	  checksum is a 384-bit (48-byte) hash value used to check that the
++	  image contents have not been corrupted. Use this for the highest
++	  security.
++
++config SPL_SHA512_SUPPORT
++	bool "Support SHA512"
++	depends on SPL_FIT
++	select SHA512
++	select SHA512_ALGO
++	help
++	  Enable this to support SHA512 in FIT images within SPL. A SHA512
++	  checksum is a 512-bit (64-byte) hash value used to check that the
++	  image contents have not been corrupted.
+ 
+ config SPL_FIT_IMAGE_TINY
+ 	bool "Remove functionality from SPL FIT loading to reduce size"
+diff -Naur uboot_org/drivers/crypto/aspeed_acry.c uboot/drivers/crypto/aspeed_acry.c
+--- uboot_org/drivers/crypto/aspeed_acry.c	1970-01-01 08:00:00.000000000 +0800
++++ uboot/drivers/crypto/aspeed_acry.c	2022-06-06 17:41:42.693555081 +0800
+@@ -0,0 +1,56 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * (C) Copyright ASPEED Technology Inc.
++ */
++#include <common.h>
++#include <clk.h>
++#include <dm/device.h>
++#include <dm/fdtaddr.h>
++
++struct aspeed_acry {
++	struct clk clk;
++};
++
++static int aspeed_acry_probe(struct udevice *dev)
++{
++	struct aspeed_acry *acry = dev_get_priv(dev);
++	int ret;
++
++	ret = clk_get_by_index(dev, 0, &acry->clk);
++	if (ret < 0) {
++		debug("Can't get clock for %s: %d\n", dev->name, ret);
++		return ret;
++	}
++
++	ret = clk_enable(&acry->clk);
++	if (ret) {
++		debug("Failed to enable acry clock (%d)\n", ret);
++		return ret;
++	}
++
++	return ret;
++}
++
++static int aspeed_acry_remove(struct udevice *dev)
++{
++	struct aspeed_acry *acry = dev_get_priv(dev);
++
++	clk_disable(&acry->clk);
++
++	return 0;
++}
++
++static const struct udevice_id aspeed_acry_ids[] = {
++	{ .compatible = "aspeed,ast2600-acry" },
++	{ }
++};
++
++U_BOOT_DRIVER(aspeed_acry) = {
++	.name = "aspeed_acry",
++	.id = UCLASS_MISC,
++	.of_match = aspeed_acry_ids,
++	.probe = aspeed_acry_probe,
++	.remove = aspeed_acry_remove,
++	.priv_auto_alloc_size = sizeof(struct aspeed_acry),
++	.flags = DM_FLAG_PRE_RELOC,
++};
+diff -Naur uboot_org/drivers/crypto/aspeed_hace.c uboot/drivers/crypto/aspeed_hace.c
+--- uboot_org/drivers/crypto/aspeed_hace.c	1970-01-01 08:00:00.000000000 +0800
++++ uboot/drivers/crypto/aspeed_hace.c	2022-06-06 17:41:42.693555081 +0800
+@@ -0,0 +1,434 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * (C) Copyright ASPEED Technology Inc.
++ * Copyright 2021 IBM Corp.
++ */
++#include <common.h>
++#include <clk.h>
++
++#include <log.h>
++#include <asm/io.h>
++#include <malloc.h>
++#include <hash.h>
++
++#include <dm/device.h>
++#include <dm/fdtaddr.h>
++
++#include <linux/bitops.h>
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/iopoll.h>
++
++#define ASPEED_HACE_STS			0x1C
++#define  HACE_RSA_ISR			BIT(13)
++#define  HACE_CRYPTO_ISR		BIT(12)
++#define  HACE_HASH_ISR			BIT(9)
++#define  HACE_RSA_BUSY			BIT(2)
++#define  HACE_CRYPTO_BUSY		BIT(1)
++#define  HACE_HASH_BUSY			BIT(0)
++#define ASPEED_HACE_HASH_SRC		0x20
++#define ASPEED_HACE_HASH_DIGEST_BUFF	0x24
++#define ASPEED_HACE_HASH_KEY_BUFF	0x28
++#define ASPEED_HACE_HASH_DATA_LEN	0x2C
++#define  HACE_SG_LAST			BIT(31)
++#define ASPEED_HACE_HASH_CMD		0x30
++#define  HACE_SHA_BE_EN			BIT(3)
++#define  HACE_MD5_LE_EN			BIT(2)
++#define  HACE_ALGO_MD5			0
++#define  HACE_ALGO_SHA1			BIT(5)
++#define  HACE_ALGO_SHA224		BIT(6)
++#define  HACE_ALGO_SHA256		(BIT(4) | BIT(6))
++#define  HACE_ALGO_SHA512		(BIT(5) | BIT(6))
++#define  HACE_ALGO_SHA384		(BIT(5) | BIT(6) | BIT(10))
++#define  HASH_CMD_ACC_MODE		(0x2 << 7)
++#define  HACE_SG_EN			BIT(18)
++
++#define ASPEED_SHA1_DIGEST_SIZE		20
++#define ASPEED_SHA256_DIGEST_SIZE	32
++#define ASPEED_SHA384_DIGEST_SIZE	64
++#define ASPEED_SHA512_DIGEST_SIZE	64
++
++#define ASPEED_SHA_TYPE_SHA1		1
++#define ASPEED_SHA_TYPE_SHA256		2
++#define ASPEED_SHA_TYPE_SHA384		3
++#define ASPEED_SHA_TYPE_SHA512		4
++
++struct aspeed_sg {
++	u32 len;
++	u32 addr;
++};
++
++struct aspeed_hash_ctx {
++	struct aspeed_sg sg[2]; /* Must be 8 byte aligned */
++	u8 digest[64]; /* Must be 8 byte aligned */
++	u32 method;
++	u32 digest_size;
++	u32 block_size;
++	u64 digcnt[2]; /* total length */
++	u32 bufcnt;
++	u8 buffer[256];
++};
++
++struct aspeed_hace {
++	struct clk clk;
++};
++
++static const u32 sha1_iv[8] = {
++	0x01234567UL, 0x89abcdefUL, 0xfedcba98UL, 0x76543210UL,
++	0xf0e1d2c3UL, 0, 0, 0
++};
++
++static const u32 sha256_iv[8] = {
++	0x67e6096aUL, 0x85ae67bbUL, 0x72f36e3cUL, 0x3af54fa5UL,
++	0x7f520e51UL, 0x8c68059bUL, 0xabd9831fUL, 0x19cde05bUL
++};
++
++static const u32 sha384_iv[16] = {
++	0x5d9dbbcbUL, 0xd89e05c1UL, 0x2a299a62UL, 0x07d57c36UL,
++	0x5a015991UL, 0x17dd7030UL, 0xd8ec2f15UL, 0x39590ef7UL,
++	0x67263367UL, 0x310bc0ffUL, 0x874ab48eUL, 0x11155868UL,
++	0x0d2e0cdbUL, 0xa78ff964UL, 0x1d48b547UL, 0xa44ffabeUL
++};
++
++static const u32 sha512_iv[16] = {
++	0x67e6096aUL, 0x08c9bcf3UL, 0x85ae67bbUL, 0x3ba7ca84UL,
++	0x72f36e3cUL, 0x2bf894feUL, 0x3af54fa5UL, 0xf1361d5fUL,
++	0x7f520e51UL, 0xd182e6adUL, 0x8c68059bUL, 0x1f6c3e2bUL,
++	0xabd9831fUL, 0x6bbd41fbUL, 0x19cde05bUL, 0x79217e13UL
++};
++
++static phys_addr_t base;
++
++static int aspeed_hace_wait_completion(u32 reg, u32 flag, int timeout_us)
++{
++	u32 val;
++
++	return readl_poll_timeout(reg, val, (val & flag) == flag, timeout_us);
++}
++
++static void aspeed_ahash_fill_padding(struct aspeed_hash_ctx *ctx, unsigned int remainder)
++{
++	unsigned int index, padlen;
++	u64 bits[2];
++
++	if (ctx->block_size == 64) {
++		bits[0] = cpu_to_be64(ctx->digcnt[0] << 3);
++		index = (ctx->bufcnt + remainder) & 0x3f;
++		padlen = (index < 56) ? (56 - index) : ((64 + 56) - index);
++		*(ctx->buffer + ctx->bufcnt) = 0x80;
++		memset(ctx->buffer + ctx->bufcnt + 1, 0, padlen - 1);
++		memcpy(ctx->buffer + ctx->bufcnt + padlen, bits, 8);
++		ctx->bufcnt += padlen + 8;
++	} else {
++		bits[1] = cpu_to_be64(ctx->digcnt[0] << 3);
++		bits[0] = cpu_to_be64(ctx->digcnt[1] << 3 | ctx->digcnt[0] >> 61);
++		index = (ctx->bufcnt + remainder) & 0x7f;
++		padlen = (index < 112) ? (112 - index) : ((128 + 112) - index);
++		*(ctx->buffer + ctx->bufcnt) = 0x80;
++		memset(ctx->buffer + ctx->bufcnt + 1, 0, padlen - 1);
++		memcpy(ctx->buffer + ctx->bufcnt + padlen, bits, 16);
++		ctx->bufcnt += padlen + 16;
++	}
++}
++
++static int hash_trigger(struct aspeed_hash_ctx *ctx, int hash_len)
++{
++	if (readl(base + ASPEED_HACE_STS) & HACE_HASH_BUSY) {
++		debug("HACE error: engine busy\n");
++		return -EBUSY;
++	}
++	/* Clear pending completion status */
++	writel(HACE_HASH_ISR, base + ASPEED_HACE_STS);
++
++	writel((u32)ctx->sg, base + ASPEED_HACE_HASH_SRC);
++	writel((u32)ctx->digest, base + ASPEED_HACE_HASH_DIGEST_BUFF);
++	writel((u32)ctx->digest, base + ASPEED_HACE_HASH_KEY_BUFF);
++	writel(hash_len, base + ASPEED_HACE_HASH_DATA_LEN);
++	writel(ctx->method, base + ASPEED_HACE_HASH_CMD);
++
++	/* SHA512 hashing appears to have a througput of about 12MB/s */
++	return aspeed_hace_wait_completion(base + ASPEED_HACE_STS,
++					   HACE_HASH_ISR,
++					   1000 + (hash_len >> 3));
++}
++
++#if IS_ENABLED(CONFIG_SHA_PROG_HW_ACCEL)
++int hw_sha_init(struct hash_algo *algo, void **ctxp)
++{
++	struct aspeed_hash_ctx *ctx;
++	u32 method;
++	u32 block_size;
++
++	ctx = memalign(8, sizeof(struct aspeed_hash_ctx));
++	memset(ctx, '\0', sizeof(struct aspeed_hash_ctx));
++
++	method = HASH_CMD_ACC_MODE | HACE_SHA_BE_EN | HACE_SG_EN;
++	if (!strcmp(algo->name, "sha1")) {
++		method |= HACE_ALGO_SHA1;
++		block_size = 64;
++		memcpy(ctx->digest, sha1_iv, 32);
++	} else if (!strcmp(algo->name, "sha256")) {
++		method |= HACE_ALGO_SHA256;
++		block_size = 64;
++		memcpy(ctx->digest, sha256_iv, 32);
++	} else if (!strcmp(algo->name, "sha384")) {
++		method |= HACE_ALGO_SHA384;
++		block_size = 128;
++		memcpy(ctx->digest, sha384_iv, 64);
++	} else if (!strcmp(algo->name, "sha512")) {
++		method |= HACE_ALGO_SHA512;
++		block_size = 128;
++		memcpy(ctx->digest, sha512_iv, 64);
++	} else {
++		return -ENOTSUPP;
++	}
++
++	if (!ctx) {
++		debug("HACE error: Cannot allocate memory for context\n");
++		return -ENOMEM;
++	}
++
++	ctx->method = method;
++	ctx->block_size = block_size;
++	ctx->digest_size = algo->digest_size;
++	ctx->bufcnt = 0;
++	ctx->digcnt[0] = 0;
++	ctx->digcnt[1] = 0;
++	*ctxp = ctx;
++
++	return 0;
++}
++
++int hw_sha_update(struct hash_algo *algo, void *hash_ctx, const void *buf,
++		  unsigned int size, int is_last)
++{
++	struct aspeed_hash_ctx *ctx = hash_ctx;
++	struct aspeed_sg *sg = ctx->sg;
++	int rc;
++	int remainder;
++	int total_len;
++	int i;
++
++	ctx->digcnt[0] += size;
++	if (ctx->digcnt[0] < size)
++		ctx->digcnt[1]++;
++
++	if (ctx->bufcnt + size < ctx->block_size) {
++		memcpy(ctx->buffer + ctx->bufcnt, buf, size);
++		ctx->bufcnt += size;
++		return 0;
++	}
++	remainder = (size + ctx->bufcnt) % ctx->block_size;
++	total_len = size + ctx->bufcnt - remainder;
++	i = 0;
++	if (ctx->bufcnt != 0) {
++		sg[0].addr = (u32)ctx->buffer;
++		sg[0].len = ctx->bufcnt;
++		if (total_len == ctx->bufcnt)
++			sg[0].len |= HACE_SG_LAST;
++		i++;
++	}
++
++	if (total_len != ctx->bufcnt) {
++		sg[i].addr = (u32)buf;
++		sg[i].len = (total_len - ctx->bufcnt) | HACE_SG_LAST;
++	}
++
++	rc = hash_trigger(ctx, total_len);
++	if (remainder != 0) {
++		memcpy(ctx->buffer, buf + (total_len - ctx->bufcnt), remainder);
++		ctx->bufcnt = remainder;
++	} else {
++		ctx->bufcnt = 0;
++	}
++
++	return rc;
++}
++
++int hw_sha_finish(struct hash_algo *algo, void *hash_ctx, void *dest_buf, int size)
++{
++	struct aspeed_hash_ctx *ctx = hash_ctx;
++	struct aspeed_sg *sg = ctx->sg;
++	int rc;
++
++	if (size < ctx->digest_size) {
++		debug("HACE error: insufficient size on destination buffer\n");
++		free(ctx);
++		return -EINVAL;
++	}
++	aspeed_ahash_fill_padding(ctx, 0);
++
++	sg[0].addr = (u32)ctx->buffer;
++	sg[0].len = ctx->bufcnt | HACE_SG_LAST;
++
++	rc = hash_trigger(ctx, ctx->bufcnt);
++	memcpy(dest_buf, ctx->digest, ctx->digest_size);
++
++	free(ctx);
++
++	return rc;
++}
++#endif
++
++static int sha_digest(const void *src, unsigned int length, void *digest,
++		      u32 sha_type)
++{
++	struct aspeed_hash_ctx *ctx;
++	int ret;
++
++	if (!((u32)src & BIT(31))) {
++		debug("HACE src out of bounds: can only copy from SDRAM\n");
++		return -EINVAL;
++	}
++
++	if (readl(base + ASPEED_HACE_STS) & HACE_HASH_BUSY) {
++		debug("HACE error: engine busy\n");
++		return -EBUSY;
++	}
++
++	ctx = memalign(8, sizeof(struct aspeed_hash_ctx));
++	memset(ctx, '\0', sizeof(struct aspeed_hash_ctx));
++
++	if (!ctx) {
++		debug("HACE error: Cannot allocate memory for context\n");
++		return -ENOMEM;
++	}
++	ctx->method = HASH_CMD_ACC_MODE | HACE_SHA_BE_EN | HACE_SG_EN;
++
++	switch (sha_type) {
++	case ASPEED_SHA_TYPE_SHA1:
++		ctx->block_size = 64;
++		ctx->digest_size = 20;
++		ctx->method |= HACE_ALGO_SHA1;
++		memcpy(ctx->digest, sha1_iv, 32);
++		break;
++	case ASPEED_SHA_TYPE_SHA256:
++		ctx->block_size = 64;
++		ctx->digest_size = 32;
++		ctx->method |= HACE_ALGO_SHA256;
++		memcpy(ctx->digest, sha256_iv, 32);
++		break;
++	case ASPEED_SHA_TYPE_SHA384:
++		ctx->block_size = 128;
++		ctx->digest_size = 64;
++		ctx->method |= HACE_ALGO_SHA384;
++		memcpy(ctx->digest, sha384_iv, 64);
++		break;
++	case ASPEED_SHA_TYPE_SHA512:
++		ctx->block_size = 128;
++		ctx->digest_size = 64;
++		ctx->method |= HACE_ALGO_SHA512;
++		memcpy(ctx->digest, sha512_iv, 64);
++		break;
++	default:
++		return -ENOTSUPP;
++	}
++
++	ctx->digcnt[0] = length;
++	ctx->digcnt[1] = 0;
++
++	aspeed_ahash_fill_padding(ctx, length);
++
++	if (length != 0) {
++		ctx->sg[0].addr = (u32)src;
++		ctx->sg[0].len = length;
++		ctx->sg[1].addr = (u32)ctx->buffer;
++		ctx->sg[1].len = ctx->bufcnt | HACE_SG_LAST;
++	} else {
++		ctx->sg[0].addr = (u32)ctx->buffer;
++		ctx->sg[0].len = ctx->bufcnt | HACE_SG_LAST;
++	}
++
++	ret = hash_trigger(ctx, length + ctx->bufcnt);
++	memcpy(digest, ctx->digest, ctx->digest_size);
++	free(ctx);
++
++	return ret;
++}
++
++void hw_sha1(const unsigned char *pbuf, unsigned int buf_len,
++	     unsigned char *pout, unsigned int chunk_size)
++{
++	int rc;
++
++	rc = sha_digest(pbuf, buf_len, pout, ASPEED_SHA_TYPE_SHA1);
++	if (rc)
++		debug("HACE failure: %d\n", rc);
++}
++
++void hw_sha256(const unsigned char *pbuf, unsigned int buf_len,
++	       unsigned char *pout, unsigned int chunk_size)
++{
++	int rc;
++
++	rc = sha_digest(pbuf, buf_len, pout, ASPEED_SHA_TYPE_SHA256);
++	if (rc)
++		debug("HACE failure: %d\n", rc);
++}
++
++void hw_sha384(const unsigned char *pbuf, unsigned int buf_len,
++	       unsigned char *pout, unsigned int chunk_size)
++{
++	int rc;
++
++	rc = sha_digest(pbuf, buf_len, pout, ASPEED_SHA_TYPE_SHA384);
++	if (rc)
++		debug("HACE failure: %d\n", rc);
++}
++
++void hw_sha512(const unsigned char *pbuf, unsigned int buf_len,
++	       unsigned char *pout, unsigned int chunk_size)
++{
++	int rc;
++
++	rc = sha_digest(pbuf, buf_len, pout, ASPEED_SHA_TYPE_SHA512);
++	if (rc)
++		debug("HACE failure: %d\n", rc);
++}
++
++static int aspeed_hace_probe(struct udevice *dev)
++{
++	struct aspeed_hace *hace = dev_get_priv(dev);
++	int ret;
++
++	ret = clk_get_by_index(dev, 0, &hace->clk);
++	if (ret < 0) {
++		debug("Can't get clock for %s: %d\n", dev->name, ret);
++		return ret;
++	}
++
++	ret = clk_enable(&hace->clk);
++	if (ret) {
++		debug("Failed to enable fsi clock (%d)\n", ret);
++		return ret;
++	}
++
++	/* As the crypto code does not pass us any driver state */
++	base = devfdt_get_addr(dev);
++
++	return ret;
++}
++
++static int aspeed_hace_remove(struct udevice *dev)
++{
++	struct aspeed_hace *hace = dev_get_priv(dev);
++
++	clk_disable(&hace->clk);
++
++	return 0;
++}
++
++static const struct udevice_id aspeed_hace_ids[] = {
++	{ .compatible = "aspeed,ast2600-hace" },
++	{ }
++};
++
++U_BOOT_DRIVER(aspeed_hace) = {
++	.name		= "aspeed_hace",
++	.id		= UCLASS_MISC,
++	.of_match	= aspeed_hace_ids,
++	.probe		= aspeed_hace_probe,
++	.remove		= aspeed_hace_remove,
++	.priv_auto_alloc_size = sizeof(struct aspeed_hace),
++	.flags  = DM_FLAG_PRE_RELOC,
++};
+diff -Naur uboot_org/drivers/crypto/aspeed_rsa.c uboot/drivers/crypto/aspeed_rsa.c
+--- uboot_org/drivers/crypto/aspeed_rsa.c	1970-01-01 08:00:00.000000000 +0800
++++ uboot/drivers/crypto/aspeed_rsa.c	2022-06-06 17:41:42.693555081 +0800
+@@ -0,0 +1,138 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * (C) Copyright 2021 ASPEED Technology Inc.
++ */
++
++#include <config.h>
++#include <common.h>
++#include <dm.h>
++#include <asm/types.h>
++#include <asm/io.h>
++#include <malloc.h>
++#include <u-boot/rsa-mod-exp.h>
++
++/* ARCY data memory (internal SRAM) */
++#define ARCY_DMEM_BASE		0x1e710000
++#define ARCY_DMEM_SIZE		0x10000
++
++/* ARCY registers */
++#define ARCY_BASE			0x1e6fa000
++#define ARCY_CTRL1			(ARCY_BASE + 0x00)
++#define   ARCY_CTRL1_RSA_DMA		BIT(1)
++#define   ARCY_CTRL1_RSA_START		BIT(0)
++#define ARCY_CTRL2			(ARCY_BASE + 0x44)
++#define ARCY_CTRL3			(ARCY_BASE + 0x48)
++#define   ARCY_CTRL3_SRAM_AHB_ACCESS	BIT(8)
++#define   ARCY_CTRL3_ECC_RSA_MODE_MASK	GENMASK(5, 4)
++#define   ARCY_CTRL3_ECC_RSA_MODE_SHIFT	4
++#define ARCY_DMA_DRAM_SADDR		(ARCY_BASE + 0x4c)
++#define ARCY_DMA_DMEM_TADDR		(ARCY_BASE + 0x50)
++#define   ARCY_DMA_DMEM_TADDR_LEN_MASK	GENMASK(15, 0)
++#define   ARCY_DMA_DMEM_TADDR_LEN_SHIFT	0
++#define ARCY_RSA_PARAM			(ARCY_BASE + 0x58)
++#define   ARCY_RSA_PARAM_EXP_MASK	GENMASK(31, 16)
++#define   ARCY_RSA_PARAM_EXP_SHIFT	16
++#define   ARCY_RSA_PARAM_MOD_MASK	GENMASK(15, 0)
++#define   ARCY_RSA_PARAM_MOD_SHIFT	0
++#define ARCY_RSA_INT_EN			(ARCY_BASE + 0x3f8)
++#define   ARCY_RSA_INT_EN_RSA_READY	BIT(2)
++#define   ARCY_RSA_INT_EN_RSA_CMPLT	BIT(1)
++#define ARCY_RSA_INT_STS		(ARCY_BASE + 0x3fc)
++#define   ARCY_RSA_INT_STS_RSA_READY	BIT(2)
++#define   ARCY_RSA_INT_STS_RSA_CMPLT	BIT(1)
++
++/* misc. constant */
++#define ARCY_ECC_MODE	2
++#define ARCY_RSA_MODE	3
++#define ARCY_CTX_BUFSZ	0x600
++
++static int aspeed_mod_exp(struct udevice *dev, const uint8_t *sig, uint32_t sig_len,
++			  struct key_prop *prop, uint8_t *out)
++{
++	int i, j;
++	u8 *ctx;
++	u8 *ptr;
++	u32 reg;
++
++	ctx = memalign(16, ARCY_CTX_BUFSZ);
++	if (!ctx)
++		return -ENOMEM;
++
++	memset(ctx, 0, ARCY_CTX_BUFSZ);
++
++	ptr = (u8 *)prop->public_exponent;
++	for (i = prop->exp_len - 1, j = 0; i >= 0; --i) {
++		ctx[j] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	ptr = (u8 *)prop->modulus;
++	for (i = (prop->num_bits >> 3) - 1, j = 0; i >= 0; --i) {
++		ctx[j + 16] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	ptr = (u8 *)sig;
++	for (i = sig_len - 1, j = 0; i >= 0; --i) {
++		ctx[j + 32] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	writel((u32)ctx, ARCY_DMA_DRAM_SADDR);
++
++	reg = (((prop->exp_len << 3) << ARCY_RSA_PARAM_EXP_SHIFT) & ARCY_RSA_PARAM_EXP_MASK) |
++	      ((prop->num_bits << ARCY_RSA_PARAM_MOD_SHIFT) & ARCY_RSA_PARAM_MOD_MASK);
++	writel(reg, ARCY_RSA_PARAM);
++
++	reg = (ARCY_CTX_BUFSZ << ARCY_DMA_DMEM_TADDR_LEN_SHIFT) & ARCY_DMA_DMEM_TADDR_LEN_MASK;
++	writel(reg, ARCY_DMA_DMEM_TADDR);
++
++	reg = (ARCY_RSA_MODE << ARCY_CTRL3_ECC_RSA_MODE_SHIFT) & ARCY_CTRL3_ECC_RSA_MODE_MASK;
++	writel(reg, ARCY_CTRL3);
++
++	writel(ARCY_CTRL1_RSA_DMA | ARCY_CTRL1_RSA_START, ARCY_CTRL1);
++
++	/* polling RSA status */
++	while (1) {
++		reg = readl(ARCY_RSA_INT_STS);
++		if (reg & ARCY_RSA_INT_STS_RSA_CMPLT) {
++			writel(reg, ARCY_RSA_INT_STS);
++			break;
++		}
++		udelay(20);
++	}
++
++	writel(0x0, ARCY_CTRL1);
++	writel(ARCY_CTRL3_SRAM_AHB_ACCESS, ARCY_CTRL3);
++	udelay(20);
++
++	ptr = (u8 *)ARCY_DMEM_BASE;
++	for (i = (prop->num_bits / 8) - 1, j = 0; i >= 0; --i) {
++		out[i] = ptr[j + 32];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	writel(0, ARCY_CTRL3);
++	free(ctx);
++
++	return 0;
++}
++
++static const struct mod_exp_ops aspeed_arcy_ops = {
++	.mod_exp	= aspeed_mod_exp,
++};
++
++U_BOOT_DRIVER(aspeed_rsa_mod_exp) = {
++	.name = "aspeed_rsa_mod_exp",
++	.id = UCLASS_MOD_EXP,
++	.ops = &aspeed_arcy_ops,
++	.flags = DM_FLAG_PRE_RELOC,
++};
++
++U_BOOT_DEVICE(aspeed_rsa) = {
++	.name = "aspeed_rsa_mod_exp",
++};
+diff -Naur uboot_org/drivers/crypto/Kconfig uboot/drivers/crypto/Kconfig
+--- uboot_org/drivers/crypto/Kconfig	2022-06-06 17:35:28.802620825 +0800
++++ uboot/drivers/crypto/Kconfig	2022-06-06 17:41:42.693555081 +0800
+@@ -1,5 +1,28 @@
+ menu "Hardware crypto devices"
+ 
++config ASPEED_HACE
++	bool "ASPEED Hash and Crypto Engine"
++	depends on ASPEED_AST2600
++	imply SHA_HW_ACCEL
++	imply SHA_PROG_HW_ACCEL
++	imply CMD_HASH
++	help
++	 Select this option to enable a driver for using the SHA engine in
++	 the ASPEED BMC SoCs.
++
++	 Enabling this allows the use of SHA operations in hardware without requiring the
++	 SHA software implementations, saving code size.
++
++config ASPEED_ACRY
++	bool "ASPEED ECC/RSA Engine"
++	depends on ASPEED_AST2600
++	help
++	 Select this option to enable a driver for using the ECC/RSA engine in
++	 the ASPEED BMC SoCs.
++
++	 Enabling this allows the use of ECC/RSA operations in hardware without requiring the
++	 software implementations, saving code size.
++
+ source drivers/crypto/fsl/Kconfig
+ 
+ endmenu
+diff -Naur uboot_org/drivers/crypto/Makefile uboot/drivers/crypto/Makefile
+--- uboot_org/drivers/crypto/Makefile	2022-06-06 17:35:28.802620825 +0800
++++ uboot/drivers/crypto/Makefile	2022-06-06 17:41:42.693555081 +0800
+@@ -6,3 +6,6 @@
+ obj-$(CONFIG_EXYNOS_ACE_SHA)	+= ace_sha.o
+ obj-y += rsa_mod_exp/
+ obj-y += fsl/
++obj-$(CONFIG_ASPEED_HACE) += aspeed_hace.o
++obj-$(CONFIG_ASPEED_ACRY) += aspeed_acry.o
++obj-$(CONFIG_RSA_ASPEED_EXP) += aspeed_rsa.o
+diff -Naur uboot_org/include/hash.h uboot/include/hash.h
+--- uboot_org/include/hash.h	2022-06-06 17:35:50.122331242 +0800
++++ uboot/include/hash.h	2022-06-06 17:41:42.693555081 +0800
+@@ -10,7 +10,11 @@
+  * Maximum digest size for all algorithms we support. Having this value
+  * avoids a malloc() or C99 local declaration in common/cmd_hash.c.
+  */
++#if defined(CONFIG_SHA384) || defined(CONFIG_SHA512)
++#define HASH_MAX_DIGEST_SIZE	64
++#else
+ #define HASH_MAX_DIGEST_SIZE	32
++#endif
+ 
+ enum {
+ 	HASH_FLAG_VERIFY	= 1 << 0,	/* Enable verify mode */
+diff -Naur uboot_org/include/hw_sha.h uboot/include/hw_sha.h
+--- uboot_org/include/hw_sha.h	2022-06-06 17:35:50.150330862 +0800
++++ uboot/include/hw_sha.h	2022-06-06 17:41:42.693555081 +0800
+@@ -14,12 +14,38 @@
+  * @param in_addr	A pointer to the input buffer
+  * @param bufleni	Byte length of input buffer
+  * @param out_addr	A pointer to the output buffer. When complete
++ *			64 bytes are copied to pout[0]...pout[63]. Thus, a user
++ *			should allocate at least 64 bytes at pOut in advance.
++ * @param chunk_size	chunk size for sha512
++ */
++void hw_sha512(const uchar *in_addr, uint buflen, uchar *out_addr,
++	       uint chunk_size);
++
++/**
++ * Computes hash value of input pbuf using h/w acceleration
++ *
++ * @param in_addr	A pointer to the input buffer
++ * @param bufleni	Byte length of input buffer
++ * @param out_addr	A pointer to the output buffer. When complete
++ *			48 bytes are copied to pout[0]...pout[47]. Thus, a user
++ *			should allocate at least 48 bytes at pOut in advance.
++ * @param chunk_size	chunk size for sha384
++ */
++void hw_sha384(const uchar *in_addr, uint buflen, uchar *out_addr,
++	       uint chunk_size);
++
++/**
++ * Computes hash value of input pbuf using h/w acceleration
++ *
++ * @param in_addr	A pointer to the input buffer
++ * @param bufleni	Byte length of input buffer
++ * @param out_addr	A pointer to the output buffer. When complete
+  *			32 bytes are copied to pout[0]...pout[31]. Thus, a user
+  *			should allocate at least 32 bytes at pOut in advance.
+  * @param chunk_size	chunk size for sha256
+  */
+-void hw_sha256(const uchar * in_addr, uint buflen,
+-			uchar * out_addr, uint chunk_size);
++void hw_sha256(const uchar *in_addr, uint buflen, uchar *out_addr,
++	       uint chunk_size);
+ 
+ /**
+  * Computes hash value of input pbuf using h/w acceleration
+@@ -31,8 +57,8 @@
+  *			should allocate at least 32 bytes at pOut in advance.
+  * @param chunk_size	chunk_size for sha1
+  */
+-void hw_sha1(const uchar * in_addr, uint buflen,
+-			uchar * out_addr, uint chunk_size);
++void hw_sha1(const uchar *in_addr, uint buflen, uchar *out_addr,
++	     uint chunk_size);
+ 
+ /*
+  * Create the context for sha progressive hashing using h/w acceleration
+diff -Naur uboot_org/include/u-boot/rsa-checksum.h uboot/include/u-boot/rsa-checksum.h
+--- uboot_org/include/u-boot/rsa-checksum.h	2022-06-06 17:35:50.214329993 +0800
++++ uboot/include/u-boot/rsa-checksum.h	2022-06-06 17:41:42.693555081 +0800
+@@ -10,6 +10,7 @@
+ #include <image.h>
+ #include <u-boot/sha1.h>
+ #include <u-boot/sha256.h>
++#include <u-boot/sha512.h>
+ 
+ /**
+  * hash_calculate() - Calculate hash over the data
+diff -Naur uboot_org/include/u-boot/sha512.h uboot/include/u-boot/sha512.h
+--- uboot_org/include/u-boot/sha512.h	1970-01-01 08:00:00.000000000 +0800
++++ uboot/include/u-boot/sha512.h	2022-06-06 17:41:42.693555081 +0800
+@@ -0,0 +1,38 @@
++#ifndef _SHA512_H
++#define _SHA512_H
++
++#define SHA384_SUM_LEN          48
++#define SHA384_DER_LEN          19
++#define SHA512_SUM_LEN          64
++#define SHA512_DER_LEN          19
++#define SHA512_BLOCK_SIZE       128
++
++#define CHUNKSZ_SHA384	(16 * 1024)
++#define CHUNKSZ_SHA512	(16 * 1024)
++
++typedef struct {
++	uint64_t state[SHA512_SUM_LEN / 8];
++	uint64_t count[2];
++	uint8_t buf[SHA512_BLOCK_SIZE];
++} sha512_context;
++
++extern const uint8_t sha512_der_prefix[];
++
++void sha512_starts(sha512_context * ctx);
++void sha512_update(sha512_context *ctx, const uint8_t *input, uint32_t length);
++void sha512_finish(sha512_context * ctx, uint8_t digest[SHA512_SUM_LEN]);
++
++void sha512_csum_wd(const unsigned char *input, unsigned int ilen,
++		unsigned char *output, unsigned int chunk_sz);
++
++extern const uint8_t sha384_der_prefix[];
++
++void sha384_starts(sha512_context * ctx);
++void sha384_update(sha512_context *ctx, const uint8_t *input, uint32_t length);
++void sha384_finish(sha512_context * ctx, uint8_t digest[SHA384_SUM_LEN]);
++
++void sha384_csum_wd(const unsigned char *input, unsigned int ilen,
++		unsigned char *output, unsigned int chunk_sz);
++
++
++#endif /* _SHA512_H */
+diff -Naur uboot_org/lib/Kconfig uboot/lib/Kconfig
+--- uboot_org/lib/Kconfig	2022-06-06 17:35:31.402585505 +0800
++++ uboot/lib/Kconfig	2022-06-06 17:41:42.693555081 +0800
+@@ -247,22 +247,44 @@
+ 	  The SHA256 algorithm produces a 256-bit (32-byte) hash value
+ 	  (digest).
+ 
++config SHA512_ALGO
++	bool "Enable SHA512 algorithm"
++	help
++	  This option enables support of internal SHA512 algorithm.
++
++config SHA512
++	bool "Enable SHA512 support"
++	depends on SHA512_ALGO
++	help
++	  This option enables support of hashing using SHA512 algorithm.
++	  The hash is calculated in software.
++	  The SHA512 algorithm produces a 512-bit (64-byte) hash value
++	  (digest).
++
++config SHA384
++	bool "Enable SHA384 support"
++	depends on SHA512_ALGO
++	help
++	  This option enables support of hashing using SHA384 algorithm.
++	  The hash is calculated in software.
++	  The SHA384 algorithm produces a 384-bit (48-byte) hash value
++	  (digest).
++
+ config SHA_HW_ACCEL
+ 	bool "Enable hashing using hardware"
+ 	help
+-	  This option enables hardware acceleration
+-	  for SHA1/SHA256 hashing.
+-	  This affects the 'hash' command and also the
+-	  hash_lookup_algo() function.
++	  This option enables hardware acceleration for SHA hashing.
++	  This affects the 'hash' command and also the hash_lookup_algo()
++	  function.
+ 
+ config SHA_PROG_HW_ACCEL
+ 	bool "Enable Progressive hashing support using hardware"
+ 	depends on SHA_HW_ACCEL
+ 	help
+-	  This option enables hardware-acceleration for
+-	  SHA1/SHA256 progressive hashing.
+-	  Data can be streamed in a block at a time and the hashing
+-	  is performed in hardware.
++	  This option enables hardware-acceleration for SHA progressive
++	  hashing.
++	  Data can be streamed in a block at a time and the hashing is
++	  performed in hardware.
+ 
+ config MD5
+ 	bool
+diff -Naur uboot_org/lib/Makefile uboot/lib/Makefile
+--- uboot_org/lib/Makefile	2022-06-06 17:35:31.410585396 +0800
++++ uboot/lib/Makefile	2022-06-06 17:41:42.693555081 +0800
+@@ -56,6 +56,7 @@
+ obj-$(CONFIG_RSA) += rsa/
+ obj-$(CONFIG_SHA1) += sha1.o
+ obj-$(CONFIG_SHA256) += sha256.o
++obj-$(CONFIG_SHA512_ALGO) += sha512.o
+ 
+ obj-$(CONFIG_$(SPL_)ZLIB) += zlib/
+ obj-$(CONFIG_$(SPL_)GZIP) += gunzip.o
+diff -Naur uboot_org/lib/sha512.c uboot/lib/sha512.c
+--- uboot_org/lib/sha512.c	1970-01-01 08:00:00.000000000 +0800
++++ uboot/lib/sha512.c	2022-06-06 17:41:42.693555081 +0800
+@@ -0,0 +1,383 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * FIPS-180-2 compliant SHA-512 and SHA-384 implementation
++ *
++ * SHA-512 code by Jean-Luc Cooke <jlcooke@certainkey.com>
++ *
++ * Copyright (c) Jean-Luc Cooke <jlcooke@certainkey.com>
++ * Copyright (c) Andrew McDonald <andrew@mcdonald.org.uk>
++ * Copyright (c) 2003 Kyle McMartin <kyle@debian.org>
++ * Copyright (c) 2020 Reuben Dowle <reuben.dowle@4rf.com>
++ */
++
++#ifndef USE_HOSTCC
++#include <common.h>
++#include <linux/string.h>
++#else
++#include <string.h>
++#endif /* USE_HOSTCC */
++#include <watchdog.h>
++#include <u-boot/sha512.h>
++
++const uint8_t sha384_der_prefix[SHA384_DER_LEN] = {
++	0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
++	0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05,
++	0x00, 0x04, 0x30
++};
++
++const uint8_t sha512_der_prefix[SHA512_DER_LEN] = {
++	0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
++	0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
++	0x00, 0x04, 0x40
++};
++
++#define SHA384_H0	0xcbbb9d5dc1059ed8ULL
++#define SHA384_H1	0x629a292a367cd507ULL
++#define SHA384_H2	0x9159015a3070dd17ULL
++#define SHA384_H3	0x152fecd8f70e5939ULL
++#define SHA384_H4	0x67332667ffc00b31ULL
++#define SHA384_H5	0x8eb44a8768581511ULL
++#define SHA384_H6	0xdb0c2e0d64f98fa7ULL
++#define SHA384_H7	0x47b5481dbefa4fa4ULL
++
++#define SHA512_H0	0x6a09e667f3bcc908ULL
++#define SHA512_H1	0xbb67ae8584caa73bULL
++#define SHA512_H2	0x3c6ef372fe94f82bULL
++#define SHA512_H3	0xa54ff53a5f1d36f1ULL
++#define SHA512_H4	0x510e527fade682d1ULL
++#define SHA512_H5	0x9b05688c2b3e6c1fULL
++#define SHA512_H6	0x1f83d9abfb41bd6bULL
++#define SHA512_H7	0x5be0cd19137e2179ULL
++
++static inline uint64_t Ch(uint64_t x, uint64_t y, uint64_t z)
++{
++        return z ^ (x & (y ^ z));
++}
++
++static inline uint64_t Maj(uint64_t x, uint64_t y, uint64_t z)
++{
++        return (x & y) | (z & (x | y));
++}
++
++static const uint64_t sha512_K[80] = {
++        0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL, 0xb5c0fbcfec4d3b2fULL,
++        0xe9b5dba58189dbbcULL, 0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL,
++        0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL, 0xd807aa98a3030242ULL,
++        0x12835b0145706fbeULL, 0x243185be4ee4b28cULL, 0x550c7dc3d5ffb4e2ULL,
++        0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL, 0x9bdc06a725c71235ULL,
++        0xc19bf174cf692694ULL, 0xe49b69c19ef14ad2ULL, 0xefbe4786384f25e3ULL,
++        0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL, 0x2de92c6f592b0275ULL,
++        0x4a7484aa6ea6e483ULL, 0x5cb0a9dcbd41fbd4ULL, 0x76f988da831153b5ULL,
++        0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL, 0xb00327c898fb213fULL,
++        0xbf597fc7beef0ee4ULL, 0xc6e00bf33da88fc2ULL, 0xd5a79147930aa725ULL,
++        0x06ca6351e003826fULL, 0x142929670a0e6e70ULL, 0x27b70a8546d22ffcULL,
++        0x2e1b21385c26c926ULL, 0x4d2c6dfc5ac42aedULL, 0x53380d139d95b3dfULL,
++        0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL, 0x81c2c92e47edaee6ULL,
++        0x92722c851482353bULL, 0xa2bfe8a14cf10364ULL, 0xa81a664bbc423001ULL,
++        0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL, 0xd192e819d6ef5218ULL,
++        0xd69906245565a910ULL, 0xf40e35855771202aULL, 0x106aa07032bbd1b8ULL,
++        0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL, 0x2748774cdf8eeb99ULL,
++        0x34b0bcb5e19b48a8ULL, 0x391c0cb3c5c95a63ULL, 0x4ed8aa4ae3418acbULL,
++        0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL, 0x748f82ee5defb2fcULL,
++        0x78a5636f43172f60ULL, 0x84c87814a1f0ab72ULL, 0x8cc702081a6439ecULL,
++        0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL, 0xbef9a3f7b2c67915ULL,
++        0xc67178f2e372532bULL, 0xca273eceea26619cULL, 0xd186b8c721c0c207ULL,
++        0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL, 0x06f067aa72176fbaULL,
++        0x0a637dc5a2c898a6ULL, 0x113f9804bef90daeULL, 0x1b710b35131c471bULL,
++        0x28db77f523047d84ULL, 0x32caab7b40c72493ULL, 0x3c9ebe0a15c9bebcULL,
++        0x431d67c49c100d4cULL, 0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL,
++        0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL,
++};
++
++static inline uint64_t ror64(uint64_t word, unsigned int shift)
++{
++	return (word >> (shift & 63)) | (word << ((-shift) & 63));
++}
++
++#define e0(x)       (ror64(x,28) ^ ror64(x,34) ^ ror64(x,39))
++#define e1(x)       (ror64(x,14) ^ ror64(x,18) ^ ror64(x,41))
++#define s0(x)       (ror64(x, 1) ^ ror64(x, 8) ^ (x >> 7))
++#define s1(x)       (ror64(x,19) ^ ror64(x,61) ^ (x >> 6))
++
++/*
++ * 64-bit integer manipulation macros (big endian)
++ */
++#ifndef GET_UINT64_BE
++#define GET_UINT64_BE(n,b,i) {				\
++	(n) = ( (unsigned long long) (b)[(i)    ] << 56 )	\
++	    | ( (unsigned long long) (b)[(i) + 1] << 48 )	\
++	    | ( (unsigned long long) (b)[(i) + 2] << 40 )	\
++	    | ( (unsigned long long) (b)[(i) + 3] << 32 )	\
++	    | ( (unsigned long long) (b)[(i) + 4] << 24 )	\
++	    | ( (unsigned long long) (b)[(i) + 5] << 16 )	\
++	    | ( (unsigned long long) (b)[(i) + 6] <<  8 )	\
++	    | ( (unsigned long long) (b)[(i) + 7]       );	\
++}
++#endif
++#ifndef PUT_UINT64_BE
++#define PUT_UINT64_BE(n,b,i) {				\
++	(b)[(i)    ] = (unsigned char) ( (n) >> 56 );	\
++	(b)[(i) + 1] = (unsigned char) ( (n) >> 48 );	\
++	(b)[(i) + 2] = (unsigned char) ( (n) >> 40 );	\
++	(b)[(i) + 3] = (unsigned char) ( (n) >> 32 );	\
++	(b)[(i) + 4] = (unsigned char) ( (n) >> 24 );	\
++	(b)[(i) + 5] = (unsigned char) ( (n) >> 16 );	\
++	(b)[(i) + 6] = (unsigned char) ( (n) >>  8 );	\
++	(b)[(i) + 7] = (unsigned char) ( (n)       );	\
++}
++#endif
++
++static inline void LOAD_OP(int I, uint64_t *W, const uint8_t *input)
++{
++	GET_UINT64_BE(W[I], input, I*8);
++}
++
++static inline void BLEND_OP(int I, uint64_t *W)
++{
++	W[I & 15] += s1(W[(I-2) & 15]) + W[(I-7) & 15] + s0(W[(I-15) & 15]);
++}
++
++static void
++sha512_transform(uint64_t *state, const uint8_t *input)
++{
++	uint64_t a, b, c, d, e, f, g, h, t1, t2;
++
++	int i;
++	uint64_t W[16];
++
++	/* load the state into our registers */
++	a=state[0];   b=state[1];   c=state[2];   d=state[3];
++	e=state[4];   f=state[5];   g=state[6];   h=state[7];
++
++	/* now iterate */
++	for (i=0; i<80; i+=8) {
++		if (!(i & 8)) {
++			int j;
++
++			if (i < 16) {
++				/* load the input */
++				for (j = 0; j < 16; j++)
++					LOAD_OP(i + j, W, input);
++			} else {
++				for (j = 0; j < 16; j++) {
++					BLEND_OP(i + j, W);
++				}
++			}
++		}
++
++		t1 = h + e1(e) + Ch(e,f,g) + sha512_K[i  ] + W[(i & 15)];
++		t2 = e0(a) + Maj(a,b,c);    d+=t1;    h=t1+t2;
++		t1 = g + e1(d) + Ch(d,e,f) + sha512_K[i+1] + W[(i & 15) + 1];
++		t2 = e0(h) + Maj(h,a,b);    c+=t1;    g=t1+t2;
++		t1 = f + e1(c) + Ch(c,d,e) + sha512_K[i+2] + W[(i & 15) + 2];
++		t2 = e0(g) + Maj(g,h,a);    b+=t1;    f=t1+t2;
++		t1 = e + e1(b) + Ch(b,c,d) + sha512_K[i+3] + W[(i & 15) + 3];
++		t2 = e0(f) + Maj(f,g,h);    a+=t1;    e=t1+t2;
++		t1 = d + e1(a) + Ch(a,b,c) + sha512_K[i+4] + W[(i & 15) + 4];
++		t2 = e0(e) + Maj(e,f,g);    h+=t1;    d=t1+t2;
++		t1 = c + e1(h) + Ch(h,a,b) + sha512_K[i+5] + W[(i & 15) + 5];
++		t2 = e0(d) + Maj(d,e,f);    g+=t1;    c=t1+t2;
++		t1 = b + e1(g) + Ch(g,h,a) + sha512_K[i+6] + W[(i & 15) + 6];
++		t2 = e0(c) + Maj(c,d,e);    f+=t1;    b=t1+t2;
++		t1 = a + e1(f) + Ch(f,g,h) + sha512_K[i+7] + W[(i & 15) + 7];
++		t2 = e0(b) + Maj(b,c,d);    e+=t1;    a=t1+t2;
++	}
++
++	state[0] += a; state[1] += b; state[2] += c; state[3] += d;
++	state[4] += e; state[5] += f; state[6] += g; state[7] += h;
++
++	/* erase our data */
++	a = b = c = d = e = f = g = h = t1 = t2 = 0;
++}
++
++static void sha512_block_fn(sha512_context *sst, const uint8_t *src,
++				    int blocks)
++{
++	while (blocks--) {
++		sha512_transform(sst->state, src);
++		src += SHA512_BLOCK_SIZE;
++	}
++}
++
++static void sha512_base_do_update(sha512_context *sctx,
++					const uint8_t *data,
++					unsigned int len)
++{
++	unsigned int partial = sctx->count[0] % SHA512_BLOCK_SIZE;
++
++	sctx->count[0] += len;
++	if (sctx->count[0] < len)
++		sctx->count[1]++;
++
++	if (unlikely((partial + len) >= SHA512_BLOCK_SIZE)) {
++		int blocks;
++
++		if (partial) {
++			int p = SHA512_BLOCK_SIZE - partial;
++
++			memcpy(sctx->buf + partial, data, p);
++			data += p;
++			len -= p;
++
++			sha512_block_fn(sctx, sctx->buf, 1);
++		}
++
++		blocks = len / SHA512_BLOCK_SIZE;
++		len %= SHA512_BLOCK_SIZE;
++
++		if (blocks) {
++			sha512_block_fn(sctx, data, blocks);
++			data += blocks * SHA512_BLOCK_SIZE;
++		}
++		partial = 0;
++	}
++	if (len)
++		memcpy(sctx->buf + partial, data, len);
++}
++
++static void sha512_base_do_finalize(sha512_context *sctx)
++{
++	const int bit_offset = SHA512_BLOCK_SIZE - sizeof(uint64_t[2]);
++	uint64_t *bits = (uint64_t *)(sctx->buf + bit_offset);
++	unsigned int partial = sctx->count[0] % SHA512_BLOCK_SIZE;
++
++	sctx->buf[partial++] = 0x80;
++	if (partial > bit_offset) {
++		memset(sctx->buf + partial, 0x0, SHA512_BLOCK_SIZE - partial);
++		partial = 0;
++
++		sha512_block_fn(sctx, sctx->buf, 1);
++	}
++
++	memset(sctx->buf + partial, 0x0, bit_offset - partial);
++	bits[0] = cpu_to_be64(sctx->count[1] << 3 | sctx->count[0] >> 61);
++	bits[1] = cpu_to_be64(sctx->count[0] << 3);
++	sha512_block_fn(sctx, sctx->buf, 1);
++}
++
++#if defined(CONFIG_SHA384)
++void sha384_starts(sha512_context * ctx)
++{
++	ctx->state[0] = SHA384_H0;
++	ctx->state[1] = SHA384_H1;
++	ctx->state[2] = SHA384_H2;
++	ctx->state[3] = SHA384_H3;
++	ctx->state[4] = SHA384_H4;
++	ctx->state[5] = SHA384_H5;
++	ctx->state[6] = SHA384_H6;
++	ctx->state[7] = SHA384_H7;
++	ctx->count[0] = ctx->count[1] = 0;
++}
++
++void sha384_update(sha512_context *ctx, const uint8_t *input, uint32_t length)
++{
++	sha512_base_do_update(ctx, input, length);
++}
++
++void sha384_finish(sha512_context * ctx, uint8_t digest[SHA384_SUM_LEN])
++{
++	int i;
++
++	sha512_base_do_finalize(ctx);
++	for(i=0; i<SHA384_SUM_LEN / sizeof(uint64_t); i++)
++		PUT_UINT64_BE(ctx->state[i], digest, i * 8);
++}
++
++/*
++ * Output = SHA-512( input buffer ). Trigger the watchdog every 'chunk_sz'
++ * bytes of input processed.
++ */
++void sha384_csum_wd(const unsigned char *input, unsigned int ilen,
++		unsigned char *output, unsigned int chunk_sz)
++{
++	sha512_context ctx;
++#if defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG)
++	const unsigned char *end;
++	unsigned char *curr;
++	int chunk;
++#endif
++
++	sha384_starts(&ctx);
++
++#if defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG)
++	curr = (unsigned char *)input;
++	end = input + ilen;
++	while (curr < end) {
++		chunk = end - curr;
++		if (chunk > chunk_sz)
++			chunk = chunk_sz;
++		sha384_update(&ctx, curr, chunk);
++		curr += chunk;
++		WATCHDOG_RESET();
++	}
++#else
++	sha384_update(&ctx, input, ilen);
++#endif
++
++	sha384_finish(&ctx, output);
++}
++
++#endif
++
++#if defined(CONFIG_SHA512)
++void sha512_starts(sha512_context * ctx)
++{
++	ctx->state[0] = SHA512_H0;
++	ctx->state[1] = SHA512_H1;
++	ctx->state[2] = SHA512_H2;
++	ctx->state[3] = SHA512_H3;
++	ctx->state[4] = SHA512_H4;
++	ctx->state[5] = SHA512_H5;
++	ctx->state[6] = SHA512_H6;
++	ctx->state[7] = SHA512_H7;
++	ctx->count[0] = ctx->count[1] = 0;
++}
++
++void sha512_update(sha512_context *ctx, const uint8_t *input, uint32_t length)
++{
++	sha512_base_do_update(ctx, input, length);
++}
++
++void sha512_finish(sha512_context * ctx, uint8_t digest[SHA512_SUM_LEN])
++{
++	int i;
++
++	sha512_base_do_finalize(ctx);
++	for(i=0; i<SHA512_SUM_LEN / sizeof(uint64_t); i++)
++		PUT_UINT64_BE(ctx->state[i], digest, i * 8);
++}
++
++/*
++ * Output = SHA-512( input buffer ). Trigger the watchdog every 'chunk_sz'
++ * bytes of input processed.
++ */
++void sha512_csum_wd(const unsigned char *input, unsigned int ilen,
++		unsigned char *output, unsigned int chunk_sz)
++{
++	sha512_context ctx;
++#if defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG)
++	const unsigned char *end;
++	unsigned char *curr;
++	int chunk;
++#endif
++
++	sha512_starts(&ctx);
++
++#if defined(CONFIG_HW_WATCHDOG) || defined(CONFIG_WATCHDOG)
++	curr = (unsigned char *)input;
++	end = input + ilen;
++	while (curr < end) {
++		chunk = end - curr;
++		if (chunk > chunk_sz)
++			chunk = chunk_sz;
++		sha512_update(&ctx, curr, chunk);
++		curr += chunk;
++		WATCHDOG_RESET();
++	}
++#else
++	sha512_update(&ctx, input, ilen);
++#endif
++
++	sha512_finish(&ctx, output);
++}
++#endif
+diff -Naur uboot_org/oem/ami/fmh/fmhcore.c uboot/oem/ami/fmh/fmhcore.c
+--- uboot_org/oem/ami/fmh/fmhcore.c	2022-06-06 17:39:32.955310220 +0800
++++ uboot/oem/ami/fmh/fmhcore.c	2022-06-06 17:08:09.164896972 +0800
+@@ -167,7 +167,7 @@
+ 	{
+ 		return NULL;
+ 	}
+-	fmh = (FMH *)(SectorAddr +FMH_Offset);
++	fmh = (FMH *)(FMH_Offset);
+ 
+ 	/* If alternate FMH is found, validate it */
+ 	fmh = CheckForNormalFMH_RAM(fmh);
+diff -Naur uboot_org/oem/ami/fmh/hrotcore.c uboot/oem/ami/fmh/hrotcore.c
+--- uboot_org/oem/ami/fmh/hrotcore.c	2022-06-06 17:39:32.955310220 +0800
++++ uboot/oem/ami/fmh/hrotcore.c	2022-06-06 17:41:42.693555081 +0800
+@@ -7,7 +7,6 @@
+ # include "hrot_ifc.h"
+ #include "u-boot/sha256.h"
+ #include "u-boot/rsa.h"
+-
+ #ifdef CONFIG_SPX_FEATURE_UBOOT_VALIDATE_SUPPORT
+ 	#define UBOOT_VALIDATE		1
+ #else
+@@ -22,17 +21,309 @@
+ #ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+ #define RSA_KEY_LOADADDR	(ASPEED_SRAM_BASE + 0xd000 ) 
+ #endif
++#define BOOTERROR_IDENTIFIER "$err01$"
+ 
+ static sha256_context ctx;
+ static UINT32 boot_fmh_location,product_info_offset=0;
+ static char placeToHash[HASH_BLK_SIZE];
+ 
+-void
+-hrot_start(){
++#ifdef CONFIG_SPL_BUILD
++#ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
++void spl_put(const char *data) {
++    char buff[256] = {0};
++    int retval = -1;
++
++    retval=snprintf(buff,256,"%s",data);	
++	if(retval < 0 || retval >= (long) sizeof(buff))
++	{
++		return;
++	}
++	while (*data != 0) 
++	{	
++	 	*(volatile u32 *)(0x1e784000) = *data;
++	 	data+=1;
++	 	while (!((*(volatile u32 *)(0x1e784014))&0x40));
++  	}
++}
++int hrot_start_spl(void)
++{
++    spl_put("SPL signature verification.\r\n");
+ 	sha256_starts(&ctx);
+-	return;
++    unsigned long flashsize=0,SectorCount=0;
++    unsigned long SectorSize=0;
++    int i=0;
++    int retval = -1;
++    FMH	*fmh;
++    unsigned char Name[9] = {0};
++    MODULE_INFO *mod;
++    long SkipSize;
++    unsigned long startaddress=0;	
++
++    *(volatile u32 *)(0x1e620004) |= 0x11;
++    flashsize = CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
++    SectorSize = 0x10000;
++    SectorCount = flashsize/SectorSize;
++
++	fmh = ScanforFMH_RAM((unsigned char *)(CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE-SectorSize),SectorSize);
++	if (fmh != NULL)
++    {
++    	mod = &(fmh->Module_Info);
++    	printf("\nFMH Located at 0x%08lx of Size 0x%08x\r\n",(unsigned long)((CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE-SectorSize)),le32_to_host(fmh->FMH_AllocatedSize));        
++        strncpy((char *)Name,(char *)mod->Module_Name,8);
++        Name[8]=0;
++        printf("Name    : %s\r\n",Name);
++        printf("Type    : 0x%04x\r\n",le16_to_host(mod->Module_Type));
++        printf("Flags   : 0x%04x\r\n",le16_to_host(mod->Module_Flags));
++        printf("Size    : 0x%08x\r\n",le32_to_host(mod->Module_Size));
++		product_info_offset=le32_to_host(fmh->FMH_Location) +fmh->FMH_AllocatedSize;
++		UINT32 sigaddr = product_info_offset  - PROD_SIG_OFFSET;
++		printf("\nSig addr at 0x%04lx \r\n",sigaddr);        
++    }
++    for(i=0;i<SectorCount;)
++    {
++
++        fmh = ScanforFMH_RAM((unsigned char *)(i*SectorSize),SectorSize);
++        if (fmh == NULL)
++        {
++            i++;
++            continue;
++        }
++
++        mod = &(fmh->Module_Info);
++        retval = hrot_update(mod->Module_Type, mod->Module_Name, le32_to_host(mod->Module_Location), le32_to_host(fmh->FMH_AllocatedSize), le32_to_host(fmh->FMH_Location), startaddress);
++        if(retval){
++        	printf("hrot_update failed! \r\n");
++        }
++	printf("\nFMH Located at 0x%08lx of Size 0x%08x\n",(unsigned long)((i*SectorSize)),le32_to_host(fmh->FMH_AllocatedSize));        
++        strncpy((char *)Name,(char *)mod->Module_Name,8);
++        Name[8]=0;
++        printf("Name    : %s\n",Name);
++        printf("Type    : 0x%04x\n",le16_to_host(mod->Module_Type));
++        printf("Flags   : 0x%04x\n",le16_to_host(mod->Module_Flags));
++        printf("Size    : 0x%08x\n",le32_to_host(mod->Module_Size));
++
++        if ((fmh->FMH_Ver_Major == 1) && (fmh->FMH_Ver_Minor >= 8))
++            printf("Location: 0x%08x\n", le32_to_host(mod->Module_Location));
++        else
++            printf("Location: 0x%08lx\n",((i*SectorSize)) + le32_to_host(mod->Module_Location));
++
++         if (i*SectorSize > le32_to_host(mod->Module_Location)) /* Special case of AltFMH (FMH location > Module_Location */
++            SkipSize=SectorSize;
++        else
++            SkipSize = le32_to_host(fmh->FMH_AllocatedSize);
++
++        while ((SkipSize > 0) && (i < SectorCount))
++        {
++            SkipSize-=SectorSize;
++            i++;
++        }
++        if (strncmp((char *)Name,"boot",4) == 0)
++        {
++            spl_put("bootloader detected!\r\n");
++            break;
++        } 
++    
++    } /* sector */	
++    retval = hrot_finish(startaddress);
++    if(retval){
++    	spl_put("\r\nsignature verification failed!\r\n");
++#ifdef CONFIG_SPX_FEATURE_FAIL_SAFE_BOOTING
++        while(true)
++        {
++            udelay(10000);
++        }
++#else
++        snprintf((char*)0x80000000,sizeof(BOOTERROR_IDENTIFIER),"%s",BOOTERROR_IDENTIFIER);     
++#endif        
++    }
++    else{
++        spl_put("\r\nSignature verification passed\n");
++    }
++	return 0;
++}
++
++int
++hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 AllocSize, UINT32 fmhLocation, unsigned long startaddress){
++
++	int hs_size=HASH_BLK_SIZE;
++	UINT32 stopHash;
++        unsigned char *hash_data;
++
++	UINT32 hash_start, size_to_hash;
++    
++	if((ModType == MODULE_BOOTLOADER) && (strncmp((char *)ModName,"boot",sizeof("boot")) == 0)){
++		boot_fmh_location = fmhLocation;
++	}
++
++	if(ModType == MODULE_BOOTLOADER){
++		if(ModType != MODULE_BOOTLOADER && ModType != MODULE_FMH_FIRMWARE){
++                        hash_start = startaddress + fmhLocation;
++                        size_to_hash = AllocSize;
++                }
++                else if(ModType == MODULE_FMH_FIRMWARE){
++                        hash_start = startaddress + fmhLocation;
++                        size_to_hash = AllocSize - (3*PROD_SIG_OFFSET+1024);
++			product_info_offset=startaddress + fmhLocation +AllocSize;
++                }
++                else{
++                        hash_start = startaddress + location + 0x10000;
++                	size_to_hash = fmhLocation + SIZE_OF_UBOOT_FMH - 0x10000;
++                }
++		stopHash = (size_to_hash+hash_start);
++                while(hash_start < stopHash)
++                {
++                        if((hash_start+hs_size) > stopHash && hash_start < stopHash){
++                                hs_size = stopHash - hash_start;
++                        }
++                        memcpy(placeToHash,(UINT32*)hash_start,hs_size);
++                        hash_data = (unsigned char*)placeToHash;
++
++                        if(hash_data == NULL){
++                                spl_put("ERROR setting hash data!\r\n");
++                                return 1;
++                        }
++						
++						if ((ModType == MODULE_FMH_FIRMWARE) && (hash_start == (startaddress + fmhLocation)))
++						{
++							// Start with FmhLocation + 0x17 offset exclude 1 Byte FMH_Header_Checksum
++							memset(&hash_data[23], 0, 1);
++							// Start with FmhLocation + 0x32 offset exclude 4 Byte Module_Checksum
++							memset(&hash_data[50], 0, 4);
++						}
++
++                        sha256_update(&ctx, hash_data, hs_size);
++                        hash_start += hs_size;
++                }
++
++	}
++        return 0;
++}
++
++#define START_IDENTIFIER "$start$"
++#define MODULE_IDENTIFIER_UBOOT "$boot1$"
++#define MODULE_IDENTIFIER_BKUPUBOOT "$boot2$"
++#define FWIMG_IDENTIFIER "$fwimg$"
++#define END_IDENTIFIER   "$end$"
++
++int
++hrot_finish(unsigned long startaddress){
++        unsigned char output [65];
++        UINT32 sigaddr = product_info_offset  - PROD_SIG_OFFSET;
++        int size = 64;
++        char    linebuf[16384] = {0}, linebuf1[1024] = {0};
++        void *buf=NULL, *buf1=NULL;
++        int ret =0;
++		int sig_length;
++		char identifier[8];
++
++        sha256_finish(&ctx, output);
++
++
++        if(0){
++        	linebuf[0]=linebuf[0];
++        }
++        memcpy(linebuf,(char*)RSA_KEY_LOADADDR,KEY_INFO_LENGTH*4);
++        buf=linebuf;
++  
++        memset(identifier,0,sizeof(identifier));
++        memcpy(identifier,buf,sizeof(START_IDENTIFIER));
++        identifier[7]=0;
++        if(strncmp(identifier,START_IDENTIFIER,sizeof(START_IDENTIFIER)) != 0)
++		{
++			spl_put("unable to find rsa public key start identifier :( \r\n");
++			return -1;
++		}
++		memset(identifier,0,sizeof(identifier));
++		memcpy(identifier,(UINT32*)(sigaddr),sizeof(START_IDENTIFIER));
++		if(strncmp(identifier,START_IDENTIFIER,sizeof(START_IDENTIFIER)) != 0)
++		{
++			spl_put("unable to find signature start identifier :( \r\n");
++			return -1;
++		}
++	
++		sigaddr +=sizeof(START_IDENTIFIER);
++		/* scan through hash area and find the proper hash for uboot*/
++		while(product_info_offset > sigaddr )
++		{
++            if(*((char*)(sigaddr))!='$')
++            {
++                if(sigaddr >= product_info_offset )
++                {
++                    spl_put("unable to find signature for uboot\r\n");
++                    return -1;
++                }
++                sigaddr ++;
++                continue;
++            }
++            memset(identifier,0,sizeof(identifier));
++			memcpy(identifier,(UINT32*)(sigaddr),sizeof(identifier));
++			sigaddr +=sizeof(identifier);
++			if(strncmp(identifier,MODULE_IDENTIFIER_UBOOT,sizeof(MODULE_IDENTIFIER_UBOOT)) != 0)
++			{
++				if((strncmp(identifier,END_IDENTIFIER,strlen(END_IDENTIFIER)) == 0)||
++                    ((product_info_offset <= sigaddr )))
++				{
++					spl_put("unable to find signature for uboot\r\n");
++					return -1;
++				}
++				continue;
++
++			}
++			memcpy((char *) &sig_length,(UINT32*)(sigaddr),sizeof(sig_length));
++            sigaddr +=sizeof(sig_length);
++            memcpy(linebuf1,(UINT32*)(sigaddr),sig_length);
++			buf1 = linebuf1;
++			break;
++
++		}
++		if(product_info_offset < sigaddr)
++		{
++			spl_put("signature not found :(\r\n");
++			return -1;
++		}
++
++        char *key_data = (char *)buf;
++        unsigned char *sig = (unsigned char *)buf1;
++        
++        if(0){
++                printf("%s", key_data);
++                printf("%s", sig);
++        }
++        ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);
++        return ret;
+ }
++#else
++int hrot_start_spl(void)
++{
++	if(0)
++	{
++		ctx=ctx;
++		boot_fmh_location=boot_fmh_location;
++		product_info_offset=product_info_offset;
++		placeToHash[0]=placeToHash[0];
++	}
+ 
++	return 0;
++}
++#endif
++#else
++
++#include <hash.h>
++struct hash_algo *algo;
++void *ctx_hw;
++void
++hrot_start(){
++    int ret = 0;
++    if(0)
++    {
++        ctx=ctx;
++    }
++    ret = hash_progressive_lookup_algo("sha256", &algo);
++    if (ret==0)
++        algo->hash_init(algo, &ctx_hw);
++    //sha256_starts(&ctx);
++    return;
++}
+ int
+ hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 AllocSize, UINT32 fmhLocation, unsigned long startaddress){
+ 
+@@ -43,6 +334,26 @@
+ 	UINT32 hash_start, size_to_hash;
+ 	struct spi_flash *flash;
+ 
++#ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
++        char identifier[8],buf[8];  
++        memcpy(buf,(char*)0x80000000,sizeof(BOOTERROR_IDENTIFIER));
++        memset(identifier,0,sizeof(BOOTERROR_IDENTIFIER));
++        memcpy(identifier,buf,sizeof(BOOTERROR_IDENTIFIER));
++        identifier[7]=0;
++        if(strncmp(identifier,BOOTERROR_IDENTIFIER,sizeof(BOOTERROR_IDENTIFIER)) == 0)
++        {
++            printf("Bootloader signature verification failed, halting boot!\n");
++            env_set("booterror","1");
++            memset((char*)0x80000000,0,sizeof(BOOTERROR_IDENTIFIER));
++            return -1;
++        }
++        if(env_get("booterror"))    
++        {
++            printf("Bootloader signature verification failed, halting boot!\n");
++            return -1;
++        }    
++
++#endif 
+ 	if((ModType == MODULE_BOOTLOADER) && (strncmp((char *)ModName,"boot",sizeof("boot")) == 0)){
+ 		boot_fmh_location = fmhLocation;
+ 	}
+@@ -92,8 +403,8 @@
+ 							// Start with FmhLocation + 0x32 offset exclude 4 Byte Module_Checksum
+ 							memset(&hash_data[50], 0, 4);
+ 						}
+-
+-                        sha256_update(&ctx, hash_data, hs_size);
++                        algo->hash_update(algo, ctx_hw, hash_data,hs_size, 0);
++                        //sha256_update(&ctx, hash_data, hs_size);
+                         hash_start += hs_size;
+                 }
+ 
+@@ -129,7 +440,8 @@
+ 			puts("\nspi_flash_probe failed");
+ 			hang();
+ 		}
+-        sha256_finish(&ctx, output);
++        algo->hash_finish(algo, ctx_hw, output, algo->digest_size);
++        //sha256_finish(&ctx, output);
+ 
+ #ifndef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+ 	    rc = spi_flash_read(flash,keyInfo, KEY_INFO_LENGTH*4, linebuf);
+@@ -203,5 +515,5 @@
+         ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);
+         return ret;
+ }
+-
++#endif
+ 
+diff -Naur uboot_org/oem/ami/fmh/Makefile uboot/oem/ami/fmh/Makefile
+--- uboot_org/oem/ami/fmh/Makefile	2022-06-06 17:39:32.955310220 +0800
++++ uboot/oem/ami/fmh/Makefile	2022-06-06 17:08:09.164896972 +0800
+@@ -17,8 +17,8 @@
+ # # Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+ # # MA 02111-1307 USA
+ # #
+-
+-obj-y                           += ast_wdt.o cmd_fmh.o fmhcore.o bootargs.o
++ifndef CONFIG_SPL_BUILD
++obj-y                           += ast_wdt.o cmd_fmh.o fmhcore.o bootargs.o 
+ 
+ ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
+ obj-y                           += hrotcore.o
+@@ -26,5 +26,10 @@
+ ifdef CONFIG_SPX_FEATURE_GLOBAL_FRAME_BUFFER_SUPPORT
+ obj-y                           += ast_fb.o
+ endif
+-
++else
++obj-y                           += fmhcore.o 
++ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
++obj-y                           += hrotcore.o
++endif
++endif	
+ #
+diff -Naur uboot_org/oem/Makefile uboot/oem/Makefile
+--- uboot_org/oem/Makefile	2022-06-06 17:39:46.883121698 +0800
++++ uboot/oem/Makefile	2022-06-06 17:08:09.164896972 +0800
+@@ -1,5 +1,7 @@
+ obj-y += ami/fmh/
++ifndef CONFIG_SPL_BUILD
+ obj-y += ami/ncsi/
++obj-y += ami/multidtb/
+ ifeq ($(CONFIG_SPX_FEATURE_LAN_AND_DRAM_TEST_CMD),"YES")
+ ifndef CONFIG_SANDBOX
+ ifdef FTRACE
+@@ -20,3 +22,4 @@
+ ifeq ($(CONFIG_SPX_FEATURE_GLOBAL_FRAME_BUFFER_SUPPORT),"YES")
+ obj-y += ami/bootlogo/
+ endif
++endif
+\ No newline at end of file
+diff -Naur uboot_org/scripts/Makefile.spl uboot/scripts/Makefile.spl
+--- uboot_org/scripts/Makefile.spl	2022-06-06 17:39:32.955310220 +0800
++++ uboot/scripts/Makefile.spl	2022-06-06 17:08:09.340894544 +0800
+@@ -90,6 +90,7 @@
+ libs-$(CONFIG_SPL_USB_GADGET) += drivers/usb/dwc3/
+ libs-y += dts/
+ libs-y += fs/
++libs-y += oem/
+ libs-$(CONFIG_SPL_POST_MEM_SUPPORT) += post/drivers/
+ libs-$(CONFIG_SPL_NET_SUPPORT) += net/
+ 

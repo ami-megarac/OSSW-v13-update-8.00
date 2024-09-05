@@ -1,0 +1,128 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: pam_ldap
+Source: http://www.padl.com/download
+
+Files: *
+Copyright: 1998-2009 Luke Howard <lukeh@padl.com>
+License: GPL-2+
+
+Files: chfn
+Copyright: 2000 Tom Lear <tom@trap.mtview.ca.us>
+License: GPL-2+
+
+Files: chsh
+Copyright: 2000 Tom Lear <tom@trap.mtview.ca.us>
+License: GPL-2+
+
+Files: md5.*
+Copyright: 1999 L. Peter Deutsch <ghost@aladdin.com>
+License: modified-BSD
+
+Files: debian/*
+Copyright: 1999-2000 Ben Collins <bcollins@debian.org>
+	   2000-2001 Davide Puricelli (evo) <evo@debian.org>
+           2001-2003 Sami Haahtinen <ressu@debian.org>
+           2003-2006 Stephen Frost <sfrost@debian.org> 
+           2007-2009 Richard A Nelson (Rick) <cowboy@debian.org>
+                2016 Lucas de Castro Borges <lucascastroborges@gmail.com> 
+License: GPL-2+
+
+Files: debian/po/*
+Copyright: 2003-2006 André Luís Lopes <andrelop@debian.org>
+                2003 Debian Description Translation Project <debconf@ddtp.debian.org>
+     	   2004-2007 Claus Hindsgaul <claus_h@image.dk>
+	   2004-2007 Erik Schanze <eriks@debian.org>
+     	   2004-2007 Guillem Jover <guillem@debian.org>
+	   2004 Aleix Badia i Bosch <abadia@ica.es>
+	   2004 Christian Perrier <bubulle@debian.org>
+	   2005-2009 Clytie Siddall <clytie@riverland.net.au>
+	   2006-2009 Matthias Julius <mdeb@julius-net.net>
+	   2007-2008 Daniel Nylander <po@danielnylander.se>
+ 	   2007 Bart Cornelis <cobaco@skolelinux.no>
+	   2007 Felipe Augusto van de Wiel (faw) <faw@debian.org>
+	   2007 Guilhelm Panaget <guilhelm.panaget@free.fr>
+	   2007 Jacobo Tarrio <jtarrio@debian.org>
+	   2007 Javier Fernández-Sanguino <jfs@debian.org>
+	   2007 Tiago Fernandes <tjg.fernandes@gmail.com>
+	   2007 Yuriy Talakan' <yt@drsk.ru>
+	   2008-2009 Luca Monducci <luca.mo@tiscali.it>
+	   2008-2009 Yuri Kozlov <kozlov.y@gmail.com>
+	   2008 Frank Damgaard <debian@overbygaard.dk>
+	   2008 Kanru Chen <koster@debian.org.tw>
+	   2008 Richard A Nelson <cowboy@debian.org>
+	   2009 Américo Monteiro <a_monteiro@netcabo.pt>
+	   2009 Bruno Travouillon <debian@travouillon.fr>
+	   2009 Esko Arajärvi <edu@iki.fi>
+	   2009 Ivan Masár <helix84@centrum.sk>
+	   2009 Marce Villarino <mvillarino@gmail.com>
+	   2009 Martin Bagge <brother@bsnet.se>
+	   2009 Piarres Beobide EGaña <pi@beobide.net>
+	   2010 Francisco Javier Cuadrado <fcocuadrado@gmail.com>
+	   2010 Ji ZhengYu <zhengyuji@gmail.com>
+	   2012 Jeroen Schot <schot@a-eskwadraat.nl>
+	   2012 Michał Kułach <michal.kulach@gmail.com>
+	        Ayax Fernandez Rosado <afernandez@apglug.org.pes>
+	   	Ilgiz Kalmetev <translator@ilgiz.pp.ru>
+	   	Language-Team: Catalan <debian-l10n-catalan@lists.debian.org>
+	   	Language-Team: Chinese (simplified) <i18n-zh@googlegroups.com>
+		Language-Team: Czech <debian-l10n-czech@lists.debian.org>
+		Language-Team: Debian l10n Dutch <debian-l10n-dutch@lists.debian.org>
+		Language-Team: Debian l10n Spanish <debian-l10n-spanish@lists.debian.org>
+		Language-Team: Debian-user in Chinese [Big5] <debian-chinese-big5@lists
+		Language-Team: Euskara <debian-l10n-eu@lists.debian.org>
+		Language-Team: Finnish <debian-l10n-finnish@lists.debian.org>
+		Language-Team: French <debian-l10n-french@lists.debian.org>
+		Language-Team: Galician <proxecto@trasno.net>
+		Language-Team: German <debian-l10n-german@lists.debian.org>
+		Language-Team: Italian <debian-l10n-italian@lists.debian.org>
+		Language-Team: Japanese <debian-japanese@lists.debian.org>
+		Language-Team: l10n portuguese <debian-l10n-portuguese@lists.debian.org>
+		Language-Team: Norsk (bokmål) <i18n-nb@lister.ping.uio.no>
+		Language-Team: Polish <debian-l10n-polish@lists.debian.org>
+		Language-Team: Portuguese <traduz@debianpt.org>
+		Language-Team: Russian <debian-l10n-russian@lists.debian.org>
+		Language-Team: Slovak <sk-i18n@lists.linux.sk>
+		Language-Team: Swedish <debian-l10n-swedish@lists.debian.org>
+		Language-Team: Vietnamese <vi-VN@googlegroups.com>
+		Martin Quinson <martin.quinson@tuxfamily.org>
+		Miroslav Kure <kurem@debian.cz>
+		Philippe Batailler <philippe.batailler@free.fr>
+License: GPL-2+
+
+License: GPL-2+
+ This package is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: modified-BSD
+ This software is provided 'as-is', without any express or implied
+ warranty.  In no event will the authors be held liable for any damages
+ arising from the use of this software.
+ . 
+ Permission is granted to anyone to use this software for any purpose,
+ including commercial applications, and to alter it and redistribute it
+ freely, subject to the following restrictions:
+ .
+ 1. The origin of this software must not be misrepresented; you must not
+    claim that you wrote the original software. If you use this software
+    in a product, an acknowledgment in the product documentation would be
+    appreciated but is not required.
+ 2. Altered source versions must be plainly marked as such, and must not be
+    misrepresented as being the original software.
+ 3. This notice may not be removed or altered from any source distribution.
+ .
+ L. Peter Deutsch
+ ghost@aladdin.com
+

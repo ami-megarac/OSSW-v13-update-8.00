@@ -1,0 +1,74 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "PowerManagement_PCI_core": {
+        "RecordEnable": true,
+        "SkipOnFail": true,
+        "LoopOnCore": true,
+        "MaxTimeSec": 1,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/PM_info/core%d/",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdPkgConfigCore": [
+              {"Params": ["Target", 88, "Core", "0x004", 4],"Output": {"Name": ["pm_0x004"]}},
+              {"Params": ["Target", 88, "Core", "0x005", 4],"Output": {"Name": ["pm_0x005"]}},
+              {"Params": ["Target", 88, "Core", "0x006", 4],"Output": {"Name": ["pm_0x006"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "NVD": {
+    "dimm_masks_auto_discovery": false,
+    "dimm_masks": ["0x0", "0x0"],
+    "csr": {
+      "_record_enable": true,
+      "header_info": ["reg_name", "device", "function", "offset"],
+      "reg_list": [
+        ["vendor_device_id", 24, 6, "0x8"],
+        ["revision_mfg_id", 24, 6, "0xC"],
+        ["d_fw_status", 4, 6, "0x0"],
+        ["d_fw_status_h", 4, 6, "0x4"],
+        ["fw_misc_0", 0, 6, "0x030"],
+        ["fw_misc_1", 0, 6, "0x034"],
+        ["fw_misc_2", 0, 6, "0x038"],
+        ["fw_misc_3", 0, 6, "0x03C"],
+        ["fw_misc_4", 0, 6, "0x040"],
+        ["fw_misc_5", 0, 6, "0x044"],
+        ["fw_misc_6", 0, 6, "0x048"],
+        ["fw_misc_7", 0, 6, "0x04C"]
+      ]
+    },
+    "error_log": {
+      "_record_enable": true,
+      "header_info": ["log_name", "log_type", "log_level", "max_seq_num"],
+      "log_list": [
+        ["media_log_high_priority", 0, 1, 1],
+        ["thermal_log_high_priority", 1, 1, 1]
+      ]
+    },
+    "smart_health_info": {
+      "_record_enable": true
+    }
+  }
+}

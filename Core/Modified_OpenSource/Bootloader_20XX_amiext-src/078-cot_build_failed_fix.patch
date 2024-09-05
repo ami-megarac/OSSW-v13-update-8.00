@@ -1,0 +1,51 @@
+diff --git a/oem/ami/fmh/hrot_ifc.h b/oem/ami/fmh/hrot_ifc.h
+old mode 100755
+new mode 100644
+index 2d9cfc6e..64de3b31
+--- a/oem/ami/fmh/hrot_ifc.h
++++ b/oem/ami/fmh/hrot_ifc.h
+@@ -4,16 +4,20 @@
+ 
+ typedef unsigned long   UINT32;
+ void hrot_start(void);
+-#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++
++#if !defined(CONFIG_SPL_BUILD) && defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++
+ int hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 ModSize, UINT32 fmhLocation, unsigned long startaddress, int image);
+-#else
+-int hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 ModSize, UINT32 fmhLocation, unsigned long startaddress);
+-#endif
+-#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++
+ int hrot_finish(unsigned long startaddress, int image);
++
+ #else
++
++int hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 ModSize, UINT32 fmhLocation, unsigned long startaddress);
++
+ int hrot_finish(unsigned long startaddress);
+ #endif
++
+ extern int rsa_get_pub_key_uboot_verify(const char *key_val, unsigned char *enc_hash, unsigned int enc_hash_len, unsigned char *hash, unsigned int hash_len);
+ 
+ #endif
+diff --git a/oem/ami/fmh/hrotcore.c b/oem/ami/fmh/hrotcore.c
+index 275cbc40..78f94fce 100644
+--- a/oem/ami/fmh/hrotcore.c
++++ b/oem/ami/fmh/hrotcore.c
+@@ -482,7 +482,6 @@ hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 Alloc
+         return 0;
+ }
+ 
+-
+ #define START_IDENTIFIER "$start$"
+ #define FWIMG_IDENTIFIER "$fwimg$"
+ #define END_IDENTIFIER   "$end$"
+@@ -601,5 +600,5 @@ hrot_finish(unsigned long startaddress){
+         ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);
+         return ret;
+ }
+-#endif
++#endif // CONFIG_SPL_BUILD
+ 

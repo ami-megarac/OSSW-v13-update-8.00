@@ -1,0 +1,13 @@
+--- uboot_old/oem/ami/fmh/cmd_fmh.c	2022-04-12 12:46:47.940276319 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2022-04-12 12:46:07.316991662 +0530
+@@ -1663,10 +1663,6 @@
+ 			strcat(bootargs,FSName);
+ 		}
+ 
+-#ifdef CONFIG_BIGPHYSAREA
+-		strcat(bootargs," bigphysarea=");
+-		strcat(bootargs,CONFIG_BIGPHYSAREA);
+-#endif		
+ #ifdef CONFIG_EXTRA_BOOTARGS 
+ 		strcat(bootargs," " CONFIG_EXTRA_BOOTARGS);
+ #endif

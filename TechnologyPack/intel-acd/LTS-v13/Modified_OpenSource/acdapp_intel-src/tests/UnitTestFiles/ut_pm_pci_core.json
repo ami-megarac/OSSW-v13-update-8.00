@@ -1,0 +1,41 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "PowerManagement_PCI_core": {
+        "RecordEnable": true,
+        "SkipOnFail": true,
+        "LoopOnCore": true,
+        "MaxTimeSec": 1,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/PM_info/core%d/",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdPkgConfigCore": [
+              {"Params": ["Target", 88, "Core", "0x004", 4],"Output": {"Name": ["pm_0x004"]}},
+              {"Params": ["Target", 88, "Core", "0x005", 4],"Output": {"Name": ["pm_0x005"]}},
+              {"Params": ["Target", 88, "Core", "0x006", 4],"Output": {"Name": ["pm_0x006"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

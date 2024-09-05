@@ -1,0 +1,7 @@
+LuaBit v0.4
+-------------------
+a bitwise operation lib for lua.
+http://luaforge.net/projects/bit/
+Modified for use with Love2D by Jared "Nergal" Hewitt
+Under the MIT license.
+copyright(c) 2006~2007 hanzhao (abrash_han@hotmail.com)

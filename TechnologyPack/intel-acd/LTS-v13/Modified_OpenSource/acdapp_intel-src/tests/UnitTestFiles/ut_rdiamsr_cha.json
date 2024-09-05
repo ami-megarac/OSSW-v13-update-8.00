@@ -1,0 +1,48 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "Uncore_RdIAMSR_CHA": {
+        "RecordEnable": true,
+        "RecordType": "0x08",
+        "ProductType": "0x1c",
+        "Revision": "0x01",
+        "SkipOnFail": false,
+        "LoopOnCHA": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore/",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdIAMSR": [
+              {"Params": ["Target", "CHA", "0x8000"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8000"]}},
+              {"Params": ["Target", "CHA", "0x8002"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8002"]}},
+              {"Params": ["Target", "CHA", "0x8003"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8003"]}},
+              {"Params": ["Target", "CHA", "0x8004"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8004"]}},
+              {"Params": ["Target", "CHA", "0x8005"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8005"]}},
+              {"Params": ["Target", "CHA", "0x8050"],"Output": {"Size": 8, "Name":["RDIAMSR_cha%d_0x8050"]}},
+              {"Params": ["Target", "CHA", "0x8200"],"Output": {"Size": 2, "Name":["RDIAMSR_cha%d_0x8200"]}},
+              {"Params": ["Target", "CHA", "0x8201"],"Output": {"Size": 2, "Name":["RDIAMSR_cha%d_0x8201"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

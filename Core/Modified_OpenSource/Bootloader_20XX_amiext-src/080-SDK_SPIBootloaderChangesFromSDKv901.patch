@@ -1,0 +1,1361 @@
+From d2a46db2fb75508a157580a334527c25475aa19b Mon Sep 17 00:00:00 2001
+From: saikumaru <saikumaru@ami.com>
+Date: Mon, 27 May 2024 18:29:42 +0530
+Subject: [PATCH] SDKv9.01 fix migration for SPI
+
+The fixes migrated from following SDK commits,
+1. spi: aspeed: Support pure SPI mode only
+	https://github.com/AspeedTech-BMC/u-boot/commit/b5f444ea0c3d47151f1bed2019e28e78191f1328
+2. spi: aspeed: Use fixed SPI clock frequency at the beginning
+	https://github.com/AspeedTech-BMC/u-boot/commit/eba3f26ae6e8848e9e675c1bb5b98ae3eea93fdd
+3. spi: aspeed: Fix bug for lower SPI clock frequency
+	https://github.com/AspeedTech-BMC/u-boot/commit/41629eddca1bbeca91cc2964644a9d6c3364bc60
+4. spi: Add usage example for write protect APIs
+	https://github.com/AspeedTech-BMC/u-boot/commit/591e1cf026383b6774449ad6edc355211dc85708
+5. spi: aspeed: Add pure command mode support
+	https://github.com/AspeedTech-BMC/u-boot/commit/bbe907db07efd5c65a93d757f660b31ffb0d8e60
+6. spi: aspeed: Fix bug when using 2Gb flash
+	https://github.com/AspeedTech-BMC/u-boot/commit/71df69c62a66344805d1d2407b205b83debb24cf
+7. spi: aspeed: Add flash write-protect by host ctrl APIs
+	https://github.com/AspeedTech-BMC/u-boot/commit/4c8f336ce14f1f1fdab526678e29b34cd56163ac
+---
+ uboot/drivers/mtd/spi/sf-uclass.c    |  10 +
+ uboot/drivers/mtd/spi/sf_internal.h  |   8 +
+ uboot/drivers/mtd/spi/sf_probe.c     |  16 +
+ uboot/drivers/mtd/spi/spi-nor-core.c | 116 ++++-
+ uboot/drivers/spi/Kconfig            |   7 +
+ uboot/drivers/spi/aspeed_spi.c       | 723 +++++++++++++++++++++++++--
+ uboot/drivers/spi/spi-uclass.c       |  30 ++
+ uboot/include/linux/mtd/spi-nor.h    |   5 +
+ uboot/include/spi.h                  |   3 +
+ uboot/include/spi_flash.h            |  16 +
+ 10 files changed, 887 insertions(+), 47 deletions(-)
+
+diff --git a/drivers/mtd/spi/sf-uclass.c b/drivers/mtd/spi/sf-uclass.c
+index 719a2fd2..06c73752 100644
+--- a/drivers/mtd/spi/sf-uclass.c
++++ b/drivers/mtd/spi/sf-uclass.c
+@@ -28,6 +28,16 @@ int spi_flash_erase_dm(struct udevice *dev, u32 offset, size_t len)
+ 	return log_ret(sf_get_ops(dev)->erase(dev, offset, len));
+ }
+ 
++int spi_flash_ctrl_wlock_dm(struct udevice *dev, u32 offset, size_t len)
++{
++	return log_ret(sf_get_ops(dev)->flash_ctrl_wlock(dev, offset, len));
++}
++
++int spi_flash_ctrl_wunlock_dm(struct udevice *dev, u32 offset, size_t len)
++{
++	return log_ret(sf_get_ops(dev)->flash_ctrl_wunlock(dev, offset, len));
++}
++
+ int spl_flash_get_sw_write_prot(struct udevice *dev)
+ {
+ 	struct dm_spi_flash_ops *ops = sf_get_ops(dev);
+diff --git a/drivers/mtd/spi/sf_internal.h b/drivers/mtd/spi/sf_internal.h
+index a6bf7348..c66b0834 100644
+--- a/drivers/mtd/spi/sf_internal.h
++++ b/drivers/mtd/spi/sf_internal.h
+@@ -65,6 +65,8 @@ struct flash_info {
+ #define NO_CHIP_ERASE		BIT(12) /* Chip does not support chip erase */
+ #define SPI_NOR_SKIP_SFDP	BIT(13)	/* Skip parsing of SFDP tables */
+ #define USE_CLSR		BIT(14)	/* use CLSR command */
++
++	void (*fixup)(struct spi_nor *nor);
+ };
+ 
+ extern const struct flash_info spi_nor_ids[];
+@@ -93,6 +95,12 @@ int spi_flash_cmd_write(struct spi_slave *spi, const u8 *cmd, size_t cmd_len,
+ /* Get software write-protect value (BP bits) */
+ int spi_flash_cmd_get_sw_write_prot(struct spi_flash *flash);
+ 
++int spi_flash_wlock_by_host_ctrl(struct spi_flash *flash,
++				 u32 offset, size_t len);
++int spi_flash_wunlock_by_host_ctrl(struct spi_flash *flash,
++				   u32 offset, size_t len);
++int spi_nor_ctrl_wlock(struct spi_slave *slave, u32 offset, size_t len);
++int spi_nor_ctrl_wunlock(struct spi_slave *slave, u32 offset, size_t len);
+ 
+ #ifdef CONFIG_SPI_FLASH_MTD
+ int spi_flash_mtd_register(struct spi_flash *flash);
+diff --git a/drivers/mtd/spi/sf_probe.c b/drivers/mtd/spi/sf_probe.c
+index 7f1378f4..8844373d 100644
+--- a/drivers/mtd/spi/sf_probe.c
++++ b/drivers/mtd/spi/sf_probe.c
+@@ -137,6 +137,20 @@ static int spi_flash_std_get_sw_write_prot(struct udevice *dev)
+ 	return spi_flash_cmd_get_sw_write_prot(flash);
+ }
+ 
++static int spi_flash_std_ctrl_wlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct spi_flash *flash = dev_get_uclass_priv(dev);
++
++	return spi_flash_wlock_by_host_ctrl(flash, offset, len);
++}
++
++static int spi_flash_std_ctrl_wunlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct spi_flash *flash = dev_get_uclass_priv(dev);
++
++	return spi_flash_wunlock_by_host_ctrl(flash, offset, len);
++}
++
+ static int spi_flash_std_probe(struct udevice *dev)
+ {
+ 	struct spi_slave *slave = dev_get_parent_priv(dev);
+@@ -163,6 +177,8 @@ static const struct dm_spi_flash_ops spi_flash_std_ops = {
+ 	.write = spi_flash_std_write,
+ 	.erase = spi_flash_std_erase,
+ 	.get_sw_write_prot = spi_flash_std_get_sw_write_prot,
++	.flash_ctrl_wlock = spi_flash_std_ctrl_wlock,
++	.flash_ctrl_wunlock = spi_flash_std_ctrl_wunlock,
+ };
+ 
+ static const struct udevice_id spi_flash_std_ids[] = {
+diff --git a/drivers/mtd/spi/spi-nor-core.c b/drivers/mtd/spi/spi-nor-core.c
+index 86dcbcbd..e1936759 100644
+--- a/drivers/mtd/spi/spi-nor-core.c
++++ b/drivers/mtd/spi/spi-nor-core.c
+@@ -259,7 +259,8 @@ static int read_fsr(struct spi_nor *nor)
+  * location. Return the configuration register value.
+  * Returns negative if error occurred.
+  */
+-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
++#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || \
++	defined(CONFIG_SPI_FLASH_XTX)
+ static int read_cr(struct spi_nor *nor)
+ {
+ 	int ret;
+@@ -409,6 +410,7 @@ static int set_4byte(struct spi_nor *nor, const struct flash_info *info,
+ 	case SNOR_MFR_GIGADEVICE:
+ 	case SNOR_MFR_ISSI:
+ 	case SNOR_MFR_CYPRESS:
++	case SNOR_MFR_XTX:
+ 		if (need_wren)
+ 			write_enable(nor);
+ 
+@@ -856,6 +858,54 @@ static bool cypress_s25hx_t(const struct flash_info *info)
+ 	return false;
+ }
+ 
++static ssize_t spi_nor_read_data_w25q02gjv(struct spi_nor *nor, loff_t from,
++					   size_t len, u_char *buf)
++{
++	struct spi_mem_op op =
++			SPI_MEM_OP(SPI_MEM_OP_CMD(nor->read_opcode, 1),
++				   SPI_MEM_OP_ADDR(nor->addr_width, from, 1),
++				   SPI_MEM_OP_DUMMY(nor->read_dummy, 1),
++				   SPI_MEM_OP_DATA_IN(len, buf, 1));
++	size_t remaining = len;
++	int ret;
++	u32 die_sz = 0x04000000;
++
++	/* get transfer protocols. */
++	op.cmd.buswidth = spi_nor_get_protocol_inst_nbits(nor->read_proto);
++	op.addr.buswidth = spi_nor_get_protocol_addr_nbits(nor->read_proto);
++	op.dummy.buswidth = op.addr.buswidth;
++	op.data.buswidth = spi_nor_get_protocol_data_nbits(nor->read_proto);
++
++	/* convert the dummy cycles to the number of bytes */
++	op.dummy.nbytes = (nor->read_dummy * op.dummy.buswidth) / 8;
++
++	while (remaining) {
++		op.data.nbytes = remaining < UINT_MAX ? remaining : UINT_MAX;
++
++		if (op.data.nbytes > die_sz - (op.addr.val % die_sz))
++			op.data.nbytes = die_sz - (op.addr.val % die_sz);
++
++		ret = spi_mem_adjust_op_size(nor->spi, &op);
++		if (ret)
++			return ret;
++
++		ret = spi_mem_exec_op(nor->spi, &op);
++		if (ret)
++			return ret;
++
++		op.addr.val += op.data.nbytes;
++		remaining -= op.data.nbytes;
++		op.data.buf.in += op.data.nbytes;
++	}
++
++	return len;
++}
++
++void w25q02gjv_fixup(struct spi_nor *nor)
++{
++	nor->read = spi_nor_read_data_w25q02gjv;
++}
++
+ #if defined(CONFIG_SPI_FLASH_STMICRO) || defined(CONFIG_SPI_FLASH_SST)
+ /* Write status register and ensure bits in mask match written values */
+ static int write_sr_and_check(struct spi_nor *nor, u8 status_new, u8 mask)
+@@ -1144,6 +1194,40 @@ static int stm_is_locked(struct spi_nor *nor, loff_t ofs, uint64_t len)
+ }
+ #endif /* CONFIG_SPI_FLASH_STMICRO */
+ 
++static int spi_nor_wlock_by_host_ctrl(struct spi_nor *nor,
++				      u32 offset, size_t len)
++{
++	struct spi_slave *spi = nor->spi;
++	int ret;
++
++	ret = spi_claim_bus(spi);
++	if (ret < 0)
++		return ret;
++
++	ret = spi_nor_ctrl_wlock(spi, offset, len);
++
++	spi_release_bus(spi);
++
++	return ret;
++}
++
++static int spi_nor_wunlock_by_host_ctrl(struct spi_nor *nor,
++					u32 offset, size_t len)
++{
++	struct spi_slave *spi = nor->spi;
++	int ret;
++
++	ret = spi_claim_bus(spi);
++	if (ret < 0)
++		return ret;
++
++	ret = spi_nor_ctrl_wunlock(spi, offset, len);
++
++	spi_release_bus(spi);
++
++	return ret;
++}
++
+ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
+ {
+ 	int			tmp;
+@@ -1494,7 +1578,8 @@ static int macronix_quad_enable(struct spi_nor *nor)
+ }
+ #endif
+ 
+-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
++#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || \
++	defined(CONFIG_SPI_FLASH_XTX)
+ /*
+  * Write status Register and configuration register with 2 bytes
+  * The first byte will be written to the status register, while the
+@@ -2235,7 +2320,8 @@ static int spi_nor_parse_bfpt(struct spi_nor *nor,
+ 	case BFPT_DWORD15_QER_NONE_111:
+ 		params->quad_enable = NULL;
+ 		break;
+-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
++#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || \
++	defined(CONFIG_SPI_FLASH_XTX)
+ 	case BFPT_DWORD15_QER_SR2_BIT1_BUGGY:
+ 	case BFPT_DWORD15_QER_SR2_BIT1_NO_RD:
+ 		params->quad_enable = spansion_no_read_cr_quad_enable;
+@@ -2246,7 +2332,8 @@ static int spi_nor_parse_bfpt(struct spi_nor *nor,
+ 		params->quad_enable = macronix_quad_enable;
+ 		break;
+ #endif
+-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
++#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || \
++	defined(CONFIG_SPI_FLASH_XTX)
+ 	case BFPT_DWORD15_QER_SR2_BIT1:
+ 		params->quad_enable = spansion_read_cr_quad_enable;
+ 		break;
+@@ -2450,7 +2537,8 @@ static int spi_nor_init_params(struct spi_nor *nor,
+ #endif
+ 
+ 		default:
+-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
++#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || \
++	defined(CONFIG_SPI_FLASH_XTX)
+ 			/* Kept only for backward compatibility purpose. */
+ 			params->quad_enable = spansion_read_cr_quad_enable;
+ #endif
+@@ -2767,6 +2855,8 @@ int spi_nor_scan(struct spi_nor *nor)
+ 	nor->write = spi_nor_write_data;
+ 	nor->read_reg = spi_nor_read_reg;
+ 	nor->write_reg = spi_nor_write_reg;
++	nor->flash_lock_by_host_ctrl = spi_nor_wlock_by_host_ctrl;
++	nor->flash_unlock_by_host_ctrl = spi_nor_wunlock_by_host_ctrl;
+ 
+ 	if (spi->mode & SPI_RX_QUAD) {
+ 		hwcaps.mask |= SNOR_HWCAPS_READ_1_1_4;
+@@ -2908,6 +2998,9 @@ int spi_nor_scan(struct spi_nor *nor)
+ 	nor->erase_size = mtd->erasesize;
+ 	nor->sector_size = mtd->erasesize;
+ 
++	if (info->fixup)
++		info->fixup(nor);
++
+ #ifndef CONFIG_SPL_BUILD
+ 	printf("SF: Detected %s with page size ", nor->name);
+ 	print_size(nor->page_size, ", erase size ");
+@@ -2929,3 +3022,16 @@ int spi_flash_cmd_get_sw_write_prot(struct spi_nor *nor)
+ 
+ 	return (sr >> 2) & 7;
+ }
++
++int spi_flash_wlock_by_host_ctrl(struct spi_nor *nor, u32 offset, size_t len)
++{
++	nor->flash_lock_by_host_ctrl(nor, offset, len);
++	return 0;
++}
++
++int spi_flash_wunlock_by_host_ctrl(struct spi_nor *nor, u32 offset, size_t len)
++{
++	nor->flash_unlock_by_host_ctrl(nor, offset, len);
++	return 0;
++}
++
+diff --git a/drivers/spi/Kconfig b/drivers/spi/Kconfig
+index 6d465e58..764aae92 100644
+--- a/drivers/spi/Kconfig
++++ b/drivers/spi/Kconfig
+@@ -41,6 +41,13 @@ config ASPEED_SPI
+ 	  used to access the SPI NOR flash on boards using the Aspeed
+ 	  AST2500 SoC, such as the POWER9 OpenPOWER platforms
+ 
++config ASPEED_SPI_FLASH_WRITE_PROTECTION
++	bool "Aspeed SPI flash write protection"
++	depends on ASPEED_SPI
++	help
++	  Enable AST2600 FMC SW CRTM feature. Also, command read/write
++	  mode should be used when SW CRTM is enabled.
++
+ config ATCSPI200_SPI
+ 	bool "Andestech ATCSPI200 SPI driver"
+ 	help
+diff --git a/drivers/spi/aspeed_spi.c b/drivers/spi/aspeed_spi.c
+index 295b15b4..4eaf93bb 100644
+--- a/drivers/spi/aspeed_spi.c
++++ b/drivers/spi/aspeed_spi.c
+@@ -37,14 +37,17 @@ struct aspeed_spi_regs {
+ 	u32 dma_len;			/* 0x8c DMA Length Register */
+ 	u32 dma_checksum;		/* 0x90 Checksum Calculation Result */
+ 	u32 timings;			/* 0x94 Read Timing Compensation */
+-
++	u32 _reserved3[1];
+ 	/* not used */
+ 	u32 soft_strap_status;		/* 0x9c Software Strap Status */
+ 	u32 write_cmd_filter_ctrl;	/* 0xa0 Write Command Filter Control */
+ 	u32 write_addr_filter_ctrl;	/* 0xa4 Write Address Filter Control */
+ 	u32 lock_ctrl_reset;		/* 0xa8 Lock Control (SRST#) */
+ 	u32 lock_ctrl_wdt;		/* 0xac Lock Control (Watchdog) */
+-	u32 write_addr_filter[5];	/* 0xb0 Write Address Filter */
++	u32 write_addr_filter[8];	/* 0xb0 Write Address Filter */
++	u32 _reserved4[12];
++	u32 fully_qualified_cmd[20];	/* 0x100 Fully Qualified Command */
++	u32 addr_qualified_cmd[12];	/* 0x150 Address Qualified Command */
+ };
+ 
+ /* CE Type Setting Register */
+@@ -89,7 +92,7 @@ struct aspeed_spi_regs {
+ #define CE_CTRL_CLOCK_FREQ(div)						\
+ 	(((div) & CE_CTRL_CLOCK_FREQ_MASK) << CE_CTRL_CLOCK_FREQ_SHIFT)
+ #define CE_G6_CTRL_CLOCK_FREQ(div)						\
+-	((((div) & CE_CTRL_CLOCK_FREQ_MASK) << CE_CTRL_CLOCK_FREQ_SHIFT) | (((div) & 0xf0) << 24))
++	((((div) & CE_CTRL_CLOCK_FREQ_MASK) << CE_CTRL_CLOCK_FREQ_SHIFT) | (((div) & 0xf0) << 20))
+ #define CE_CTRL_DUMMY_LOW_SHIFT		6 /* 2 bits [7:6] */
+ #define CE_CTRL_DUMMY_LOW_MASK		0x3
+ #define CE_CTRL_DUMMY(dummy)						\
+@@ -180,6 +183,82 @@ struct aspeed_spi_flash {
+ 	struct spi_flash *spi; /* Associated SPI Flash device */
+ };
+ 
++enum aspeed_spi_dir {
++	ASPEED_SPI_DIR_IN,
++	ASPEED_SPI_DIR_OUT,
++};
++
++#define ASPEED_SPI_OP_CMD(__opcode)				\
++	{							\
++		.opcode = __opcode,				\
++	}
++
++#define ASPEED_SPI_OP_ADDR(__nbytes, __val)			\
++	{							\
++		.nbytes = __nbytes,				\
++		.val = __val,					\
++	}
++
++#define ASPEED_SPI_OP_NO_ADDR	{ }
++
++#define ASPEED_SPI_OP_DUMMY(__nbytes)				\
++	{							\
++		.nbytes = __nbytes,				\
++	}
++
++#define ASPEED_SPI_OP_NO_DUMMY	{ }
++
++#define ASPEED_SPI_OP_DATA_IN(__nbytes, __buf)			\
++	{							\
++		.dir = ASPEED_SPI_DIR_IN,				\
++		.nbytes = __nbytes,				\
++		.buf.in = __buf,				\
++	}
++
++#define ASPEED_SPI_OP_DATA_OUT(__nbytes, __buf)			\
++	{							\
++		.dir = ASPEED_SPI_DIR_OUT,				\
++		.nbytes = __nbytes,				\
++		.buf.out = __buf,				\
++	}
++
++#define ASPEED_SPI_OP_NO_DATA	{ }
++
++#define ASPEED_SPI_OP(__io_mode, __cmd, __addr, __dummy, __data)	\
++	{							\
++		.io_mode = __io_mode,				\
++		.cmd = __cmd,					\
++		.addr = __addr,					\
++		.dummy = __dummy,				\
++		.data = __data,					\
++	}
++
++struct aspeed_spi_op {
++	u32 io_mode;
++
++	struct {
++		u16 opcode;
++	} cmd;
++
++	struct {
++		u8 nbytes;
++		u32 val;
++	} addr;
++
++	struct {
++		u8 nbytes;
++	} dummy;
++
++	struct {
++		enum aspeed_spi_dir dir;
++		unsigned int nbytes;
++		union {
++			void *in;
++			const void *out;
++		} buf;
++	} data;
++};
++
+ struct aspeed_spi_priv {
+ 	struct aspeed_spi_regs *regs;
+ 	void __iomem *ahb_base; /* AHB Window for all flash devices */
+@@ -194,8 +273,16 @@ struct aspeed_spi_priv {
+ 
+ 	u8 cmd_buf[16]; /* SPI command in progress */
+ 	size_t cmd_len;
++	u8 *tmp_buf;
++	int (*spi_exec_op_cmd)(struct aspeed_spi_priv *priv,
++			       struct aspeed_spi_flash *flash,
++			       struct aspeed_spi_op *op);
++	bool pure_spi_mode_only;
+ };
+ 
++static u32 aspeed_spi_flash_to_addr(struct aspeed_spi_flash *flash,
++				    const u8 *cmdbuf, unsigned int cmdlen);
++
+ static struct aspeed_spi_flash *aspeed_spi_get_flash(struct udevice *dev)
+ {
+ 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
+@@ -222,7 +309,7 @@ static u32 aspeed_g6_spi_hclk_divisor(struct aspeed_spi_priv *priv, u32 max_hz)
+ 	u32 i, j = 0;
+ 
+ 	/* FMC/SPIR10[27:24] */
+-	for (j = 0; j < 0xf; i++) {
++	for (j = 0; j < 0xf; j++) {
+ 		for (i = 0; i < ARRAY_SIZE(hclk_masks); i++) {
+ 			if (i == 0 && j == 0)
+ 				continue;
+@@ -604,27 +691,26 @@ static int aspeed_spi_controller_init(struct aspeed_spi_priv *priv)
+ 	if (priv->new_ver) {
+ 		for (cs = 0; cs < priv->flash_count; cs++) {
+ 			struct aspeed_spi_flash *flash = &priv->flashes[cs];
+-			u32 seg_addr = readl(&priv->regs->segment_addr[cs]);
+ 			u32 addr_config = 0;
+ 			switch(cs) {
+-				case 0:
+-                                        flash->ahb_base = cs ? (void *)G6_SEGMENT_ADDR_START(seg_addr) :
+-                                                priv->ahb_base;
+-                                        debug("cs0 mem-map : %x \n", (u32)flash->ahb_base);
+-                                        break;
+-                                case 1:
+-                                        flash->ahb_base = priv->flashes[0].ahb_base + 0x8000000;        //cs0 + 128Mb : use 64MB
+-                                        debug("cs1 mem-map : %x end %x \n", (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
+-                                        addr_config = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000); //add 512Mb
+-                                        writel(addr_config, &priv->regs->segment_addr[cs]);
+-                                        break;
+-                                case 2:
+-                                        flash->ahb_base = priv->flashes[0].ahb_base + 0xc000000;        //cs0 + 192Mb : use 64MB
+-                                        debug("cs2 mem-map : %x end %x \n", (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
+-                                        addr_config = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000); //add 512Mb
+-                                        writel(addr_config, &priv->regs->segment_addr[cs]);
+-                                        break;
++			case 0:
++				flash->ahb_base = priv->ahb_base;
++				debug("cs0 mem-map : %x\n", (u32)flash->ahb_base);
++				break;
++			case 1:
++				flash->ahb_base = priv->flashes[0].ahb_base + 0x4000000; /* cs0 + 64MB */
++				debug("cs1 mem-map : %x end %x\n",
++				      (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
++				break;
++			case 2:
++				flash->ahb_base = priv->flashes[0].ahb_base + 0x4000000 * 2; /* cs0 + 128MB : use 64MB */
++				debug("cs2 mem-map : %x end %x\n",
++				      (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
++				break;
+ 			}
++			addr_config =
++				G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
++			writel(addr_config, &priv->regs->segment_addr[cs]);
+ 			flash->cs = cs;
+ 			flash->ce_ctrl_user = CE_CTRL_USERMODE;
+ 			flash->ce_ctrl_fread = CE_CTRL_READMODE;
+@@ -706,6 +792,18 @@ static int aspeed_spi_read_reg(struct aspeed_spi_priv *priv,
+ 			       struct aspeed_spi_flash *flash,
+ 			       u8 opcode, u8 *read_buf, int len)
+ {
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(0,
++			      ASPEED_SPI_OP_CMD(opcode),
++			      ASPEED_SPI_OP_ADDR(0, 0),
++			      ASPEED_SPI_OP_DUMMY(0),
++			      ASPEED_SPI_OP_DATA_IN(len, read_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
++
+ 	aspeed_spi_start_user(priv, flash);
+ 	aspeed_spi_write_to_ahb(flash->ahb_base, &opcode, 1);
+ 	aspeed_spi_read_from_ahb(flash->ahb_base, read_buf, len);
+@@ -718,6 +816,30 @@ static int aspeed_spi_write_reg(struct aspeed_spi_priv *priv,
+ 				struct aspeed_spi_flash *flash,
+ 				u8 opcode, const u8 *write_buf, int len)
+ {
++	int i;
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(0,
++			      ASPEED_SPI_OP_CMD(opcode),
++			      ASPEED_SPI_OP_ADDR(0, 0),
++			      ASPEED_SPI_OP_DUMMY(0),
++			      ASPEED_SPI_OP_DATA_OUT(len, write_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		if (opcode == SPINOR_OP_BE_4K || opcode == SPINOR_OP_BE_4K_4B ||
++		    opcode == SPINOR_OP_BE_32K || opcode == SPINOR_OP_BE_32K_4B ||
++		    opcode == SPINOR_OP_SE || opcode == SPINOR_OP_SE_4B) {
++			op.addr.nbytes = len;
++			for (i = 0; i < len; i++) {
++				op.addr.val <<= 8;
++				op.addr.val |= (u32)write_buf[i];
++			}
++			op.data.nbytes = 0;
++		}
++
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
++
+ 	aspeed_spi_start_user(priv, flash);
+ 	aspeed_spi_write_to_ahb(flash->ahb_base, &opcode, 1);
+ 	aspeed_spi_write_to_ahb(flash->ahb_base, write_buf, len);
+@@ -770,6 +892,19 @@ static ssize_t aspeed_spi_read_user(struct aspeed_spi_priv *priv,
+ {
+ 	u8 dummy = 0x00;
+ 	int i;
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(flash->read_iomode,
++			      ASPEED_SPI_OP_CMD(cmdbuf[0]),
++			      ASPEED_SPI_OP_ADDR(0, 0),
++			      ASPEED_SPI_OP_DUMMY(flash->spi->read_dummy / 8),
++			      ASPEED_SPI_OP_DATA_IN(len, read_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		op.addr.nbytes = cmdlen - 1 - op.dummy.nbytes;
++		op.addr.val = aspeed_spi_flash_to_addr(flash, cmdbuf, op.addr.nbytes + 1);
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
+ 
+ 	aspeed_spi_start_user(priv, flash);
+ 
+@@ -799,6 +934,18 @@ static ssize_t aspeed_spi_read_sfdp(struct aspeed_spi_priv *priv,
+ {
+ 	u8 dummy = 0x00;
+ 	int i;
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(flash->read_iomode,
++			      ASPEED_SPI_OP_CMD(cmdbuf[0]),
++			      ASPEED_SPI_OP_ADDR(0, 3),
++			      ASPEED_SPI_OP_DUMMY(flash->spi->read_dummy / 8),
++			      ASPEED_SPI_OP_DATA_IN(len, read_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		op.addr.val = aspeed_spi_flash_to_addr(flash, cmdbuf, op.addr.nbytes + 1);
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
+ 
+ 	/* only 1-1-1 mode is used to read SFDP */
+ 	aspeed_spi_start_user(priv, flash);
+@@ -821,6 +968,20 @@ static ssize_t aspeed_spi_write_user(struct aspeed_spi_priv *priv,
+ 				     unsigned int cmdlen, const u8 *cmdbuf,
+ 				     unsigned int len,	const u8 *write_buf)
+ {
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(flash->write_iomode,
++			      ASPEED_SPI_OP_CMD(cmdbuf[0]),
++			      ASPEED_SPI_OP_ADDR(0, 0),
++			      ASPEED_SPI_OP_DUMMY(0),
++			      ASPEED_SPI_OP_DATA_OUT(len, write_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		op.addr.nbytes = cmdlen - 1;
++		op.addr.val = aspeed_spi_flash_to_addr(flash, cmdbuf, op.addr.nbytes + 1);
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
++
+ 	aspeed_spi_start_user(priv, flash);
+ 
+ 	/* cmd buffer = cmd + addr : normally cmd is use signle mode*/
+@@ -862,6 +1023,19 @@ static ssize_t aspeed_spi_read(struct aspeed_spi_priv *priv,
+ 	/* cmd buffer = cmd + addr + dummies */
+ 	u32 offset = aspeed_spi_flash_to_addr(flash, cmdbuf,
+ 					      cmdlen - (flash->spi->read_dummy/8));
++	struct aspeed_spi_op op =
++		ASPEED_SPI_OP(flash->read_iomode,
++			      ASPEED_SPI_OP_CMD(cmdbuf[0]),
++			      ASPEED_SPI_OP_ADDR(0, 0),
++			      ASPEED_SPI_OP_DUMMY(flash->spi->read_dummy / 8),
++			      ASPEED_SPI_OP_DATA_IN(len, read_buf));
++
++	if (priv->spi_exec_op_cmd) {
++		op.addr.nbytes = cmdlen - 1 - op.dummy.nbytes;
++		op.addr.val = aspeed_spi_flash_to_addr(flash, cmdbuf, op.addr.nbytes + 1);
++		priv->spi_exec_op_cmd(priv, flash, &op);
++		return 0;
++	}
+ 
+ 	/*
+ 	 * Switch to USER command mode:
+@@ -871,9 +1045,9 @@ static ssize_t aspeed_spi_read(struct aspeed_spi_priv *priv,
+ 	 * - if read offset is smaller than the decoded start address
+ 	 *   and the decoded range is not multiple of flash size.
+ 	 */
+-	if ((offset + len >= flash->ahb_size) || \
+-		(offset < ((int)flash->ahb_base & 0x0FFFFFFF) && \
+-		(((int)flash->ahb_base & 0x0FFFFFFF) % flash->spi->size) != 0)) {
++	if (priv->pure_spi_mode_only || (offset + len >= flash->ahb_size) ||
++	    (offset < ((int)flash->ahb_base & 0x0FFFFFFF) &&
++	     (((int)flash->ahb_base & 0x0FFFFFFF) % flash->spi->size) != 0)) {
+ 		return aspeed_spi_read_user(priv, flash, cmdlen, cmdbuf,
+ 					    len, read_buf);
+ 	}
+@@ -883,6 +1057,104 @@ static ssize_t aspeed_spi_read(struct aspeed_spi_priv *priv,
+ 	return 0;
+ }
+ 
++int aspeed_spi_exec_op_cmd_mode(struct aspeed_spi_priv *priv,
++				struct aspeed_spi_flash *flash,
++				struct aspeed_spi_op *op)
++{
++	uint32_t cs = flash->cs;
++	uint32_t ctrl_val;
++	uint32_t addr_mode_reg, addr_mode_reg_backup;
++	uint32_t addr_data_mask = 0;
++	void __iomem *op_addr;
++	const void *data_buf;
++	uint32_t data_byte = 0;
++	uint32_t dummy_data = 0;
++
++	debug("iomode: %08x, cmd:%02x, addr:%08x, dummy:%d, data_len:%x, dir: %s\n",
++	      op->io_mode, op->cmd.opcode, op->addr.val, op->dummy.nbytes,
++	      op->data.nbytes, op->data.dir == ASPEED_SPI_DIR_IN ? "in" : "out");
++
++	addr_mode_reg = readl(&priv->regs->ctrl);
++	addr_mode_reg_backup = addr_mode_reg;
++	addr_data_mask = readl(&priv->regs->cmd_ctrl);
++
++	ctrl_val = flash->ce_ctrl_fread & (~0xf0ff40c7);
++	ctrl_val |= op->io_mode;
++	/* configure opcode */
++	ctrl_val |= op->cmd.opcode << 16;
++
++	/* configure operation address, address length and address mask */
++	if (op->addr.nbytes != 0) {
++		if (op->addr.nbytes == 3)
++			addr_mode_reg &= ~(0x11 << cs);
++		else
++			addr_mode_reg |= (0x11 << cs);
++
++		addr_data_mask &= 0x0f;
++		op_addr = flash->ahb_base + op->addr.val;
++	} else {
++		addr_data_mask |= 0xf0;
++		op_addr = flash->ahb_base;
++	}
++
++	if (op->dummy.nbytes != 0) {
++		ctrl_val |= ((op->dummy.nbytes & 0x3) << 6 |
++			     ((op->dummy.nbytes & 0x4) >> 2) << 14);
++	}
++
++	/* configure data io mode and data mask */
++	if (op->data.nbytes != 0) {
++		addr_data_mask &= 0xF0;
++		if (op->data.nbytes < 4)
++			addr_data_mask |= ~((1 << op->data.nbytes) - 1);
++
++		data_byte = op->data.nbytes;
++		if (op->data.dir == ASPEED_SPI_DIR_OUT) {
++			if (data_byte % 4 != 0) {
++				memset(priv->tmp_buf, 0xff, ((data_byte / 4) + 1) * 4);
++				memcpy(priv->tmp_buf, op->data.buf.out, data_byte);
++				data_buf = priv->tmp_buf;
++				data_byte = ((data_byte / 4) + 1) * 4;
++			} else {
++				data_buf = op->data.buf.out;
++			}
++		} else {
++			data_buf = op->data.buf.in;
++		}
++	} else {
++		addr_data_mask |= 0x0f;
++		data_byte = 1;
++		data_buf = &dummy_data;
++	}
++
++	/* configure command mode */
++	if (op->data.dir == ASPEED_SPI_DIR_OUT)
++		ctrl_val |= CE_CTRL_WRITEMODE;
++	else
++		ctrl_val |= CE_CTRL_FREADMODE;
++
++	/* set controller registers */
++	writel(ctrl_val, &priv->regs->ce_ctrl[cs]);
++	writel(addr_mode_reg, &priv->regs->ctrl);
++	writel(addr_data_mask, &priv->regs->cmd_ctrl);
++
++	debug("ctrl: 0x%08x, addr_mode: 0x%x, mask: 0x%x, addr:0x%08x\n",
++	      ctrl_val, addr_mode_reg, addr_data_mask, (uint32_t)op_addr);
++
++	/* trigger spi transmission or reception sequence */
++	if (op->data.dir == ASPEED_SPI_DIR_OUT)
++		memcpy_toio(op_addr, data_buf, data_byte);
++	else
++		memcpy_fromio((void *)data_buf, op_addr, data_byte);
++
++	/* restore controller setting */
++	writel(flash->ce_ctrl_fread, &priv->regs->ce_ctrl[cs]);
++	writel(addr_mode_reg_backup, &priv->regs->ctrl);
++	writel(0x0, &priv->regs->cmd_ctrl);
++
++	return 0;
++}
++
+ static int aspeed_spi_xfer(struct udevice *dev, unsigned int bitlen,
+ 			   const void *dout, void *din, unsigned long flags)
+ {
+@@ -968,6 +1240,296 @@ static int aspeed_spi_xfer(struct udevice *dev, unsigned int bitlen,
+ 	return err;
+ }
+ 
++#ifdef CONFIG_ASPEED_SPI_FLASH_WRITE_PROTECTION
++static void aspeed_spi_fill_FQCD(struct aspeed_spi_priv *priv, u8 cmd)
++{
++	u32 reg_val;
++	u32 i;
++
++	for (i = 0; i < 20; i++) {
++		reg_val = readl(&priv->regs->fully_qualified_cmd[i]);
++		if ((u8)(reg_val & 0xff) == cmd ||
++		    (u8)((reg_val & 0xff00) >> 8) == cmd) {
++			if ((reg_val & 0x80000000) == 0x80000000) {
++				debug("cmd: %02x already exists in FQCD.\n", cmd);
++				return;
++			}
++		}
++	}
++
++	for (i = 0; i < 20; i++) {
++		reg_val = readl(&priv->regs->fully_qualified_cmd[i]);
++		if ((reg_val & 0x80000000) == 0x80000000) {
++			if ((u8)(reg_val & 0xff) == 0x0) {
++				reg_val |= (u32)cmd;
++				debug("[%d]fill %02x cmd in FQCD%02d.\n", __LINE__, cmd, i);
++				writel(reg_val, &priv->regs->fully_qualified_cmd[i]);
++				return;
++			} else if ((u8)((reg_val & 0xff00) >> 8) == 0x0) {
++				reg_val |= ((u32)cmd) << 8;
++				debug("[%d]fill %02x cmd in FQCD%02d.\n", __LINE__, cmd, i);
++				writel(reg_val, &priv->regs->fully_qualified_cmd[i]);
++				return;
++			}
++		}
++	}
++
++	for (i = 0; i < 20; i++) {
++		reg_val = readl(&priv->regs->fully_qualified_cmd[i]);
++		if (reg_val == 0) {
++			reg_val = 0x80000000 | (u32)cmd;
++			debug("[%d]fill %02x cmd in FQCD%02d.\n", __LINE__, cmd, i);
++			writel(reg_val, &priv->regs->fully_qualified_cmd[i]);
++			return;
++		}
++	}
++}
++
++static void aspeed_spi_fill_AQCD(struct aspeed_spi_priv *priv, u8 cmd, u8 addr_width)
++{
++	u32 reg_val;
++	u32 i;
++	u32 bit_offset;
++
++	if (addr_width != 3 && addr_width != 4) {
++		printf("wrong address width: %d.\n", addr_width);
++		return;
++	}
++
++	bit_offset = (addr_width - 3) * 8;
++
++	for (i = 0; i < 12; i++) {
++		reg_val = readl(&priv->regs->addr_qualified_cmd[i]);
++		if ((reg_val & 0x80000000) == 0x80000000) {
++			if ((u8)((reg_val & (0xff << bit_offset)) >> bit_offset) == cmd) {
++				debug("cmd: %02x already exists in AQCD.\n", cmd);
++				return;
++			}
++		}
++	}
++
++	for (i = 0; i < 12; i++) {
++		reg_val = readl(&priv->regs->addr_qualified_cmd[i]);
++		if ((reg_val & 0x80000000) == 0x80000000) {
++			if ((u8)((reg_val & (0xff << bit_offset)) >> bit_offset) == 0x0) {
++				reg_val |= ((u32)cmd << bit_offset);
++				debug("fill %02x cmd in AQCD%02d.\n", cmd, i);
++				writel(reg_val, &priv->regs->addr_qualified_cmd[i]);
++				return;
++			}
++		}
++
++		if (reg_val == 0) {
++			reg_val = 0x80000000 | ((u32)cmd << bit_offset);
++			debug("fill %02x cmd in AQCD%02d.\n", cmd, i);
++			writel(reg_val, &priv->regs->addr_qualified_cmd[i]);
++			return;
++		}
++	}
++}
++
++static void aspeed_spi_cmd_filter_config(struct aspeed_spi_priv *priv,
++					 u32 cs, bool enable)
++{
++	u32 reg_val;
++
++	reg_val = readl(&priv->regs->write_cmd_filter_ctrl);
++
++	if (enable)
++		reg_val |= BIT(cs);
++	else
++		reg_val &= ~BIT(cs);
++
++	writel(reg_val, &priv->regs->write_cmd_filter_ctrl);
++}
++
++static int aspeed_spi_write_addr_ftr_sanity(struct aspeed_spi_priv *priv,
++					    u32 offset, size_t len)
++{
++	u32 addr_ftr_ctrl;
++	u32 reg_val;
++	u32 start;
++	u32 end;
++	u32 i;
++
++	addr_ftr_ctrl = readl(&priv->regs->write_addr_filter_ctrl);
++	for (i = 0; i < 8; i++) {
++		if ((addr_ftr_ctrl & (0x3 << (i * 2))) == 0)
++			continue;
++		reg_val = readl(&priv->regs->write_addr_filter[i]);
++		start = (reg_val & 0xffff) << 12;
++		end = (((reg_val & 0xffff0000) >> 16) << 12) | 0xFFF;
++
++		if (offset >= start && offset < end)
++			return -1;
++		else if ((offset + len) > start && (offset + len) < end)
++			return -1;
++	}
++
++	return 0;
++}
++
++static int aspeed_add_write_addr_ftr(struct aspeed_spi_priv *priv,
++				     u32 offset, size_t len)
++{
++	u32 addr_ftr_ctrl;
++	u32 reg_val;
++	u32 start;
++	u32 end;
++	u32 i;
++
++	if ((offset & 0xfff) != 0) {
++		offset &= 0xfffff000;
++		printf("protected start address will be entend to 0x%08x.\n",
++		       offset);
++	}
++
++	if ((len & 0xfff) != 0) {
++		len &= 0xfff;
++		printf("protected len will be trimed to 0x%x.\n", len);
++	}
++
++	if (len == 0) {
++		printf("invalid protect len: 0x%x.\n", len);
++		return -1;
++	}
++
++	addr_ftr_ctrl = readl(&priv->regs->write_addr_filter_ctrl);
++	for (i = 0; i < 8; i++) {
++		if ((addr_ftr_ctrl & (0x3 << (i * 2))) == 0) {
++			start = offset;
++			end = offset + len - 1;
++
++			reg_val = (start >> 12) | ((end >> 12) << 16);
++
++			debug("start: 0x%08x, end: 0x%08x, val: 0x%08x.\n",
++			      start, end, reg_val);
++
++			writel(reg_val, &priv->regs->write_addr_filter[i]);
++			addr_ftr_ctrl |= 0x3 << (i * 2);
++			writel(addr_ftr_ctrl, &priv->regs->write_addr_filter_ctrl);
++
++			printf("apply write lock from offset, 0x%08x, with len, 0x%08x.\n",
++			       offset, (u32)len);
++
++			break;
++		}
++	}
++
++	if (i == 8) {
++		printf("insufficient write address filter register.\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int aspeed_remove_write_addr_ftr(struct aspeed_spi_priv *priv,
++					u32 offset, size_t len)
++{
++	u32 addr_ftr_ctrl;
++	u32 reg_val;
++	u32 bit_mask;
++	u32 start;
++	u32 end;
++	u32 i;
++
++	if ((offset & 0xfff) != 0) {
++		printf("start address should be aligned to 0x1000.\n");
++		return -1;
++	}
++
++	if ((len & 0xfff) != 0) {
++		printf("removed length should be aligned to 0x1000.\n");
++		return -1;
++	}
++
++	if (len == 0) {
++		printf("invalid removed length!\n");
++		return -1;
++	}
++
++	addr_ftr_ctrl = readl(&priv->regs->write_addr_filter_ctrl);
++	for (i = 0; i < 8; i++) {
++		bit_mask = 0x3 << (i * 2);
++		if ((addr_ftr_ctrl & bit_mask) != bit_mask)
++			continue;
++
++		reg_val = readl(&priv->regs->write_addr_filter[i]);
++		start = (reg_val & 0xffff) << 12;
++		end = (((reg_val & 0xffff0000) >> 16) << 12) + 0x1000;
++
++		if (offset != start || offset + len != end)
++			continue;
++
++		addr_ftr_ctrl &= ~(0x3 << (i * 2));
++		writel(addr_ftr_ctrl, &priv->regs->write_addr_filter_ctrl);
++		writel(0x0, &priv->regs->write_addr_filter[i]);
++		printf("remove write lock from offset, 0x%08x, with len, 0x%08x.\n",
++		       offset, (u32)len);
++		break;
++	}
++
++	if (i == 8) {
++		printf("cannot find expected removed region.\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int aspeed_spi_mem_wlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct udevice *bus = dev->parent;
++	struct aspeed_spi_priv *priv = dev_get_priv(bus);
++	struct aspeed_spi_flash *flash;
++	struct spi_nor *nor;
++	int ret;
++
++	debug("%s offset: 0x%08x, len: 0x%08x.\n", __func__, offset, (u32)len);
++
++	flash = aspeed_spi_get_flash(dev);
++	if (!flash)
++		return -ENXIO;
++
++	nor = flash->spi;
++
++	debug("name: %s, read cmd: %02x, erase cmd: %02x, write cmd: %02x.\n",
++	      nor->name, nor->read_opcode, nor->erase_opcode, nor->program_opcode);
++
++	/* enable address filter */
++	aspeed_spi_fill_FQCD(priv, nor->read_opcode);
++	aspeed_spi_fill_AQCD(priv, nor->erase_opcode, nor->addr_width);
++	aspeed_spi_fill_AQCD(priv, nor->program_opcode, nor->addr_width);
++	aspeed_spi_cmd_filter_config(priv, flash->cs, true);
++
++	ret = aspeed_spi_write_addr_ftr_sanity(priv, offset, len);
++	if (ret < 0) {
++		printf("The expected protect region overlays with the existed regions!\n");
++		return ret;
++	}
++
++	ret = aspeed_add_write_addr_ftr(priv, offset, len);
++	if (ret < 0)
++		return -1;
++
++	return 0;
++}
++
++static int aspeed_spi_mem_wunlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct udevice *bus = dev->parent;
++	struct aspeed_spi_priv *priv = dev_get_priv(bus);
++	int ret;
++
++	ret = aspeed_remove_write_addr_ftr(priv, offset, len);
++	if (ret < 0)
++		return -1;
++
++	return 0;
++}
++#endif
++
+ static int aspeed_spi_child_pre_probe(struct udevice *dev)
+ {
+ 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
+@@ -1015,18 +1577,64 @@ static int aspeed_spi_flash_set_segment(struct aspeed_spi_priv *priv,
+ 					struct aspeed_spi_flash *flash)
+ {
+ 	u32 seg_addr;
++	u32 decode_sz_arr[ASPEED_SPI_MAX_CS];
++	u32 reg_val;
++	u32 cs;
++	u32 total_decode_sz = 0;
++	u32 cur_offset = 0;
+ 
+ 	/* could be configured through the device tree */
+ 	flash->ahb_size = flash->spi->size;
+ 
+ 	if (priv->new_ver) {
+-		seg_addr = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
+-						(u32)flash->ahb_base + flash->ahb_size);
++		if (priv->pure_spi_mode_only) {
++			flash->ahb_size = priv->ahb_size / priv->num_cs;
++			flash->ahb_size &= 0xffe00000;
++		}
++
++		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++) {
++			reg_val = readl(&priv->regs->segment_addr[cs]);
++			if (reg_val != 0 &&
++			    G6_SEGMENT_ADDR_END(reg_val) > G6_SEGMENT_ADDR_START(reg_val)) {
++				decode_sz_arr[cs] =
++					G6_SEGMENT_ADDR_END(reg_val) - G6_SEGMENT_ADDR_START(reg_val);
++			} else {
++				decode_sz_arr[cs] = 0;
++			}
++		}
++
++		decode_sz_arr[flash->cs] = flash->ahb_size;
++		aspeed_g6_adjust_decode_sz(decode_sz_arr, flash->cs + 1);
++
++		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++)
++			total_decode_sz += decode_sz_arr[cs];
++
++		if (total_decode_sz > priv->ahb_size) {
++			printf("err: Total decoded size, 0x%x, is too large.\n", total_decode_sz);
++			return -ENOMEM;
++		}
++
++		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++) {
++			struct aspeed_spi_flash *flash = &priv->flashes[cs];
++
++			flash->ahb_base = (void __iomem *)((u32)priv->ahb_base + cur_offset);
++
++			if (decode_sz_arr[cs] != 0) {
++				seg_addr = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
++								 (u32)flash->ahb_base + decode_sz_arr[cs]);
++			} else {
++				seg_addr = 0;
++			}
++
++			writel(seg_addr, &priv->regs->segment_addr[cs]);
++			flash->ahb_size = decode_sz_arr[cs];
++			cur_offset += decode_sz_arr[cs];
++		}
+ 	} else {
+ 		seg_addr = SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
+ 						  (u32)flash->ahb_base + flash->ahb_size);
++		writel(seg_addr, &priv->regs->segment_addr[flash->cs]);
+ 	}
+-	writel(seg_addr, &priv->regs->segment_addr[flash->cs]);
+ 
+ 	return 0;
+ }
+@@ -1077,19 +1685,23 @@ static int aspeed_spi_flash_init(struct aspeed_spi_priv *priv,
+ 		read_hclk = aspeed_spi_hclk_divisor(priv, slave->speed);
+ 
+ 	switch(flash->spi->read_opcode) {
+-		case SPINOR_OP_READ_1_1_2:
+-		case SPINOR_OP_READ_1_1_2_4B:
+-			flash->read_iomode = CE_CTRL_IO_DUAL_DATA;
+-			break;
+-		case SPINOR_OP_READ_1_1_4:
+-		case SPINOR_OP_READ_1_1_4_4B:
+-			flash->read_iomode = CE_CTRL_IO_QUAD_DATA;
+-			break;
+-		case SPINOR_OP_READ_1_4_4:
+-		case SPINOR_OP_READ_1_4_4_4B:
+-			flash->read_iomode = CE_CTRL_IO_QUAD_ADDR_DATA;
+-			printf("need modify dummy for 3 bytes\n");
+-			break;
++	case SPINOR_OP_READ:
++	case SPINOR_OP_READ_4B:
++		flash->read_iomode = CE_CTRL_IO_SINGLE;
++		break;
++	case SPINOR_OP_READ_1_1_2:
++	case SPINOR_OP_READ_1_1_2_4B:
++		flash->read_iomode = CE_CTRL_IO_DUAL_DATA;
++		break;
++	case SPINOR_OP_READ_1_1_4:
++	case SPINOR_OP_READ_1_1_4_4B:
++		flash->read_iomode = CE_CTRL_IO_QUAD_DATA;
++		break;
++	case SPINOR_OP_READ_1_4_4:
++	case SPINOR_OP_READ_1_4_4_4B:
++		flash->read_iomode = CE_CTRL_IO_QUAD_ADDR_DATA;
++		printf("need modify dummy for 3 bytes\n");
++		break;
+ 	}
+ 
+ 	switch(flash->spi->program_opcode) {
+@@ -1159,6 +1771,8 @@ static int aspeed_spi_claim_bus(struct udevice *dev)
+ 	struct aspeed_spi_priv *priv = dev_get_priv(bus);
+ 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
+ 	struct aspeed_spi_flash *flash;
++	struct spi_slave *slave = dev_get_parent_priv(dev);
++	u32 read_hclk;
+ 
+ 	debug("%s: claim bus CS%u\n", bus->name, slave_plat->cs);
+ 
+@@ -1166,6 +1780,16 @@ static int aspeed_spi_claim_bus(struct udevice *dev)
+ 	if (!flash)
+ 		return -ENODEV;
+ 
++	if (priv->new_ver) {
++		if (dev_read_bool(bus, "timing-calibration-disabled")) {
++			read_hclk = aspeed_g6_spi_hclk_divisor(priv, slave->speed);
++			flash->ce_ctrl_user &= CE_CTRL_FREQ_MASK;
++			flash->ce_ctrl_user |= CE_G6_CTRL_CLOCK_FREQ(read_hclk);
++			flash->ce_ctrl_fread &= CE_CTRL_FREQ_MASK;
++			flash->ce_ctrl_fread |= CE_G6_CTRL_CLOCK_FREQ(read_hclk);
++		}
++	}
++
+ 	return aspeed_spi_flash_init(priv, flash, dev);
+ }
+ 
+@@ -1212,7 +1836,8 @@ static int aspeed_spi_count_flash_devices(struct udevice *bus)
+ 
+ 	dev_for_each_subnode(node, bus) {
+ 		if (ofnode_is_available(node) &&
+-		    ofnode_device_is_compatible(node, "spi-flash"))
++		    (ofnode_device_is_compatible(node, "spi-flash") ||
++		     ofnode_device_is_compatible(node, "jedec,spi-nor")))
+ 			count++;
+ 	}
+ 
+@@ -1275,6 +1900,16 @@ static int aspeed_spi_probe(struct udevice *bus)
+ 		priv->new_ver = 1;
+ 	}
+ 
++	if (dev_read_bool(bus, "aspeed-spi-command-mode")) {
++		debug("adopt command mode\n");
++		priv->tmp_buf = memalign(4, 512);
++		priv->spi_exec_op_cmd = aspeed_spi_exec_op_cmd_mode;
++	} else {
++		priv->spi_exec_op_cmd = NULL;
++	}
++
++	priv->pure_spi_mode_only = dev_read_bool(bus, "pure-spi-mode-only");
++
+ 	/*
+ 	 * There are some slight differences between the FMC and the
+ 	 * SPI controllers
+@@ -1297,6 +1932,10 @@ static const struct dm_spi_ops aspeed_spi_ops = {
+ 	.set_mode	= aspeed_spi_set_mode,
+ 	.set_speed	= aspeed_spi_set_speed,
+ 	.xfer		= aspeed_spi_xfer,
++#ifdef CONFIG_ASPEED_SPI_FLASH_WRITE_PROTECTION
++	.mem_ctrl_wlock = aspeed_spi_mem_wlock,
++	.mem_ctrl_wunlock = aspeed_spi_mem_wunlock,
++#endif
+ };
+ 
+ static const struct udevice_id aspeed_spi_ids[] = {
+diff --git a/drivers/spi/spi-uclass.c b/drivers/spi/spi-uclass.c
+index 2bc289a7..d3536255 100644
+--- a/drivers/spi/spi-uclass.c
++++ b/drivers/spi/spi-uclass.c
+@@ -92,6 +92,26 @@ int dm_spi_xfer(struct udevice *dev, unsigned int bitlen,
+ 	return spi_get_ops(bus)->xfer(dev, bitlen, dout, din, flags);
+ }
+ 
++int dm_spi_nor_ctrl_wlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct udevice *bus = dev->parent;
++
++	if (bus->uclass->uc_drv->id != UCLASS_SPI)
++		return -EOPNOTSUPP;
++
++	return spi_get_ops(bus)->mem_ctrl_wlock(dev, offset, len);
++}
++
++int dm_spi_nor_ctrl_wunlock(struct udevice *dev, u32 offset, size_t len)
++{
++	struct udevice *bus = dev->parent;
++
++	if (bus->uclass->uc_drv->id != UCLASS_SPI)
++		return -EOPNOTSUPP;
++
++	return spi_get_ops(bus)->mem_ctrl_wunlock(dev, offset, len);
++}
++
+ int spi_claim_bus(struct spi_slave *slave)
+ {
+ 	return log_ret(dm_spi_claim_bus(slave->dev));
+@@ -108,6 +128,16 @@ int spi_xfer(struct spi_slave *slave, unsigned int bitlen,
+ 	return dm_spi_xfer(slave->dev, bitlen, dout, din, flags);
+ }
+ 
++int spi_nor_ctrl_wlock(struct spi_slave *slave, u32 offset, size_t len)
++{
++	return dm_spi_nor_ctrl_wlock(slave->dev, offset, len);
++}
++
++int spi_nor_ctrl_wunlock(struct spi_slave *slave, u32 offset, size_t len)
++{
++	return dm_spi_nor_ctrl_wunlock(slave->dev, offset, len);
++}
++
+ #if !CONFIG_IS_ENABLED(OF_PLATDATA)
+ static int spi_child_post_bind(struct udevice *dev)
+ {
+diff --git a/include/linux/mtd/spi-nor.h b/include/linux/mtd/spi-nor.h
+index b91e534d..7d2676a5 100644
+--- a/include/linux/mtd/spi-nor.h
++++ b/include/linux/mtd/spi-nor.h
+@@ -28,6 +28,7 @@
+ #define SNOR_MFR_WINBOND	0xef /* Also used by some Spansion */
+ #define SNOR_MFR_ISSI		0x9d
+ #define SNOR_MFR_CYPRESS	0x34
++#define SNOR_MFR_XTX		0x0b
+ 
+ /*
+  * Note on opcode nomenclature: some opcodes have a format like
+@@ -342,6 +343,8 @@ struct spi_nor {
+ 	int (*flash_unlock)(struct spi_nor *nor, loff_t ofs, uint64_t len);
+ 	int (*flash_is_locked)(struct spi_nor *nor, loff_t ofs, uint64_t len);
+ 	int (*quad_enable)(struct spi_nor *nor);
++	int (*flash_lock_by_host_ctrl)(struct spi_nor *nor, u32 ofs, size_t len);
++	int (*flash_unlock_by_host_ctrl)(struct spi_nor *nor, u32 ofs, size_t len);
+ 
+ 	void *priv;
+ /* Compatibility for spi_flash, remove once sf layer is merged with mtd */
+@@ -436,4 +439,6 @@ struct spi_nor_hwcaps {
+  */
+ int spi_nor_scan(struct spi_nor *nor);
+ 
++void w25q02gjv_fixup(struct spi_nor *nor);
++
+ #endif
+diff --git a/include/spi.h b/include/spi.h
+index 92427e5f..8b762a3e 100644
+--- a/include/spi.h
++++ b/include/spi.h
+@@ -442,6 +442,9 @@ struct dm_spi_ops {
+ 	 *	   is invalid, other -ve value on error
+ 	 */
+ 	int (*cs_info)(struct udevice *bus, uint cs, struct spi_cs_info *info);
++
++	int (*mem_ctrl_wlock)(struct udevice *dev, u32 offset, size_t len);
++	int (*mem_ctrl_wunlock)(struct udevice *dev, u32 offset, size_t len);
+ };
+ 
+ struct dm_spi_emul_ops {
+diff --git a/include/spi_flash.h b/include/spi_flash.h
+index 55b47218..2a72ba5f 100644
+--- a/include/spi_flash.h
++++ b/include/spi_flash.h
+@@ -47,6 +47,8 @@ struct dm_spi_flash_ops {
+ 	 *	other -ve value on error
+ 	 */
+ 	int (*get_sw_write_prot)(struct udevice *dev);
++	int (*flash_ctrl_wlock)(struct udevice *dev, u32 offset, size_t len);
++	int (*flash_ctrl_wunlock)(struct udevice *dev, u32 offset, size_t len);
+ };
+ 
+ /* Access the serial operations for a device */
+@@ -101,6 +103,8 @@ int spi_flash_erase_dm(struct udevice *dev, u32 offset, size_t len);
+  *	other -ve value on error
+  */
+ int spl_flash_get_sw_write_prot(struct udevice *dev);
++int spi_flash_ctrl_wlock_dm(struct udevice *dev, u32 offset, size_t len);
++int spi_flash_ctrl_wunlock_dm(struct udevice *dev, u32 offset, size_t len);
+ 
+ int spi_flash_probe_bus_cs(unsigned int busnum, unsigned int cs,
+ 			   unsigned int max_hz, unsigned int spi_mode,
+@@ -131,6 +135,18 @@ static inline int spi_flash_erase(struct spi_flash *flash, u32 offset,
+ 	return spi_flash_erase_dm(flash->dev, offset, len);
+ }
+ 
++static inline int spi_flash_ctrl_wlock(struct spi_flash *flash,
++				       u32 offset, size_t len)
++{
++	return spi_flash_ctrl_wlock_dm(flash->dev, offset, len);
++}
++
++static inline int spi_flash_ctrl_wunlock(struct spi_flash *flash,
++					 u32 offset, size_t len)
++{
++	return spi_flash_ctrl_wunlock_dm(flash->dev, offset, len);
++}
++
+ struct sandbox_state;
+ 
+ int sandbox_sf_bind_emul(struct sandbox_state *state, int busnum, int cs,
+-- 
+2.43.2
+

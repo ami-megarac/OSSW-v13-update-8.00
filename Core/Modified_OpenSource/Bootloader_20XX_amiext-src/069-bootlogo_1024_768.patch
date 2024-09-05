@@ -1,0 +1,383 @@
+diff -Naur uboot_old/oem/ami/bootlogo/cmd_bootlogo.c uboot_new/oem/ami/bootlogo/cmd_bootlogo.c
+--- uboot_old/oem/ami/bootlogo/cmd_bootlogo.c	2022-12-13 12:07:34.626795371 +0530
++++ uboot_new/oem/ami/bootlogo/cmd_bootlogo.c	2022-12-23 13:02:11.607129029 +0530
+@@ -7,8 +7,8 @@
+ # include "bootlogo.h"
+ 
+ #define ACTION_ADDR	"addr"
+-extern unsigned int enable_framebuffer(void);
+-int ShowBootLogoByAddress(unsigned int logo_bin_addr, int idx)
++extern unsigned int enable_framebuffer(unsigned int width ,unsigned int height, int type);
++int ShowBootLogoByAddress(unsigned int logo_bin_addr, int idx, int type)
+ {
+ 	unsigned int ptr_addr ;
+ 	struct boot_logos_t *boot_logos = NULL;
+@@ -19,6 +19,18 @@
+ 	int i;
+ 	struct color_t clut;
+ 
++	if(logo_bin_addr == 0)
++	{
++	    printf("boot logo addr is not valid:%d \n", logo_bin_addr);
++            return -1;
++	}
++
++	if(type > 2)
++	{
++	    printf("boot logo display type is not valid:%d \n", type);
++            return -1;
++	}
++
+ 	// Logo binary start address
+ 	ptr_addr = logo_bin_addr;
+ 
+@@ -50,9 +62,25 @@
+ 		if(i == idx)
+ 			break;
+ 	}
+-	printf("\n enabling Frame buffer\n");
++
+ 	// Enable Framebuffer device
+-	fb_addr = enable_framebuffer();
++	if(logo_info->width != 1024  && logo_info->width != 800 && logo_info->width != 1280)
++	{
++	    printf("boot logo addr is not valid:%d \n", logo_bin_addr);
++            return -1;
++	}
++
++	if(logo_info->width == 800)
++	{
++	    if(type == 2 || type == 0)
++	    {
++		printf("Display Port will not support 800*600 resolution\n");
++	    }
++	}
++
++	// Enable Framebuffer device
++	printf("\n enabling Frame buffer\n");
++	fb_addr = enable_framebuffer(logo_info->width, logo_info->height, type);
+ 	clut_ptr = (struct color_t *)(logo_bin_addr + logo_info->clut.offset);
+ 	logo_data_ptr = (unsigned char*)(logo_bin_addr + logo_info->data.offset);
+ 	printf("\n fb_addr = %x\n",fb_addr);
+@@ -71,17 +99,33 @@
+ 	int ret = -1;
+ 
+ 	if(!strcasecmp(argv[1], ACTION_ADDR)) {
+-		ret = ShowBootLogoByAddress(simple_strtoul(argv[2], NULL, 16), simple_strtoul(argv[3], NULL, 10));
++		if(argv[2] == NULL)
++                {
++                    printf("Please Provide The Logo Addr\n");
++                    return ret;
++                }
++		if(argv[3] == NULL)
++		{
++		    printf("Please Provide The Logo Index Value\n");
++		    return ret;
++		}
++		if(argv[4] == NULL)
++		{
++		    printf("Please Provide The Display Type\n");
++                    return ret;
++		}
++		ret = ShowBootLogoByAddress(simple_strtoul(argv[2], NULL, 16), simple_strtoul(argv[3], NULL, 10),
++		simple_strtoul(argv[4], NULL, 10));
+ 	}
+ 
+ 	return ret;
+ }
+ 
+ static char help_text[] = 
+-	"addr [Address of bootlogo binary] [image idx of bootlogo] - show logo from address.\n";
++	"addr [Address of bootlogo binary] [image idx of bootlogo] [Display Type] - show logo from address.\n[Display Type] 0 --> vga and dp, 1 --> vga, 2 --> dp\n";
+ 
+ U_BOOT_CMD(
+-	bootlogo,	4,	0,	do_bootlogo,
++	bootlogo,	5,	0,	do_bootlogo,
+ 	"Show boot logo from address", help_text
+ );
+ 
+diff -Naur uboot_old/oem/ami/fmh/ast_fb.c uboot_new/oem/ami/fmh/ast_fb.c
+--- uboot_old/oem/ami/fmh/ast_fb.c	2022-12-13 12:07:34.626795371 +0530
++++ uboot_new/oem/ami/fmh/ast_fb.c	2022-12-23 13:01:57.539075465 +0530
+@@ -9,36 +9,255 @@
+ #include "soc_hw.h"
+ 
+ #ifdef CONFIG_ASPEED_AST2600
+-unsigned int enable_framebuffer(void)
++
++#define GFX_REG_BASE			0x1E6E6000
++#define SCU_REG_BASE			0x1E6E2000
++#define DISP_START_ADDR			0x03000000
++
++#define CRT_DISP_OFFSET(x)              (x)
++#define CRT_TERM_COUNT(x)               ((x) << 16)
++
++/* CRT_HORIZ0 */
++#define CRT_H_TOTAL(x)                  (x)
++#define CRT_H_DE(x)                     ((x) << 16)
++
++/* CRT_HORIZ1 */
++#define CRT_H_RS_START(x)               (x)
++#define CRT_H_RS_END(x)                 ((x) << 16)
++
++/* CRT_VIRT0 */
++#define CRT_V_TOTAL(x)                  (x)
++#define CRT_V_DE(x)                     ((x) << 16)
++
++/* CRT_VIRT1 */
++#define CRT_V_RS_START(x)               (x)
++#define CRT_V_RS_END(x)                 ((x) << 16)
++
++/* CRT_OFFSET */
++#define CRT_DISP_OFFSET(x)              (x)
++#define CRT_TERM_COUNT(x)               ((x) << 16)
++
++/* CRT_THROD */
++#define CRT_THROD_LOW(x)                (x)
++#define CRT_THROD_HIGH(x)               ((x) << 8)
++#define G6_CRT_THROD_VAL		(CRT_THROD_LOW(0x50) | CRT_THROD_HIGH(0x70))
++
++#define DELAY				10000
++#define DP_ADDR				0x1e6eb000
++#define	DP_MCU_ADDR			0x18000000
++
++#define DP_800                          0x01050020 /* 800 x 600 60Hz */
++#define DP_1024                 	0x010a0020 /* 1024 x 768 70Hz */
++#define DP_1280                 	0x010e0020 /* 1280 x 1024 75Hz */
++
++#define DP_CONTROL_FROM_SOC     	(BIT(24)|BIT(28))
++
++unsigned int enable_framebuffer(unsigned int width, unsigned int height, int type)
+ {
+-	printf("Inside enable_framebuffer function .... \n");
+-		*(volatile u32 *)(0x1E6E2000) = 0x1688A8A8;
+-		*(volatile u32 *)(0x1E6E2000 + 0x44) = 0x4002000; 
+-		udelay(10000);
+-		*(volatile u32 *)(0x1E6E2000 + 0x84) = 0x0000400; 
+-		udelay(10000);
+-		*(volatile u32 *)(0x1E6E2000 + 0x300) = 0x0b9a8a00; 
+-		udelay(10000);
+-		*(volatile u32 *)(0x1E6E2000 + 0xc0) = 0x00011000; 
+-		udelay(10000);
+-
+-        /* Graphics Display Controller - (800x600, 32bpp, 60Hz) */
+-         *(volatile u32 *)(0x1E6E6000 + 0x70) = 0x031F041f;     // CRT Horizontal Total & Display Enable End
+-        *(volatile u32 *)(0x1E6E6000 + 0x74) = 0x03C80347;     // CRT Horizontal Retrace Start & End 
+-        *(volatile u32 *)(0x1E6E6000 + 0x78) = 0x02570273;     // CRT Vertical Total & Display Enable End
+-        *(volatile u32 *)(0x1E6E6000 + 0x7C) = 0x025D0259;     // CRT Vertical Retrace Start & End
+-		*(volatile u32 *)(0x1E6E6000 + 0x7C) = 0x025c0258;     // CRT Vertical Retrace Start & End
+-		*(volatile u32 *)(0x1E6E6000 + 0x80) = 0x03000000; // CRT Display Starting Address
+-        *(volatile u32 *)(0x1E6E6000 + 0x84) = 0x00000C80;//0x00000C80;     // CRT Display Offset & Terminal Count
+-        *(volatile u32 *)(0x1E6E6000 + 0x88) = 0x00007040;     // CRT Threshold
+-		*(volatile u32 *)(0x1E6E6000 + 0x60) = 0x00000101;     // CRT Control-1
+-        *(volatile u32 *)(0x1E6E6000 + 0x64) = 0x00000001;     // CRT Control-2
+-        
+-        udelay(10000);
+-       printf("End of enable_framebuffer function ....... \n");
++        unsigned int hdisplay = width;
++	unsigned int vdisplay = height;
++
++	unsigned int hsync_start = hdisplay + 24;
++	unsigned int hsync_end = hdisplay + 24 + 136;
++	unsigned int htotal = hdisplay + 24 + 136 + 160;
++
++	unsigned int vsync_start = vdisplay + 3;
++	unsigned int vsync_end = vdisplay + 3 + 6;
++	unsigned int vtotal = vdisplay + 3 + 6 + 29;
++
++	unsigned int bpp = 32;
++	unsigned int d_offset = (hdisplay * bpp / 8);
++	unsigned int t_count = ((hdisplay * bpp + 127) / 128);
++        unsigned int clk1 = 0, clk2 = 0, ctrl1 = 0, ctrl2 = 0, scu_c0 = 0, dp_reg = 0;
++
++	*(volatile u32 *)(SCU_REG_BASE) = 0x1688A8A8;//unlock scu
++
++	*(volatile u32 *)(SCU_REG_BASE + 0x44) = 0x4002000;//sysyem reset control clear register
++
++	udelay(DELAY);
++
++	*(volatile u32 *)(SCU_REG_BASE + 0x84) = 0x0000400;//clock stop control clear register
++
++	udelay(DELAY);
++
++	clk1 = *(volatile u32 *)(SCU_REG_BASE + 0x300);
++        clk1 &= ~(BIT(10)|BIT(9)|BIT(8));
++	*(volatile u32 *)(SCU_REG_BASE + 0x300) = clk1;
++
++	clk2 = *(volatile u32 *)(SCU_REG_BASE + 0x308);
++        clk2 &= ~(BIT(16)|BIT(15)|BIT(13)|BIT(12));
++        *(volatile u32 *)(SCU_REG_BASE + 0x308) = clk2;
++
++	clk2=0;
++	clk1=0;
++
++	if(hdisplay == 1024 && vdisplay == 768)
++	{
++	    /* 75 mhz */
++	    clk1 = *(volatile u32 *)(SCU_REG_BASE + 0x300);
++	    clk1 |= (BIT(10)|BIT(9)|BIT(8));
++	    *(volatile u32 *)(SCU_REG_BASE + 0x300) = clk1;
++
++	    clk2 = *(volatile u32 *)(SCU_REG_BASE + 0x308);
++	    clk2 |= (BIT(16)|BIT(15)|BIT(13)|BIT(12));
++	    *(volatile u32 *)(SCU_REG_BASE + 0x308) = clk2;
++
++	    if(type == 0 || type == 2)
++	    {
++		*(volatile u32 *)(DP_MCU_ADDR + 0xde0) = DP_1024;
++	    }
++
++	}
++	else if(hdisplay == 1280 && vdisplay == 1024)
++	{
++	    /* 135 mhz */
++            clk1 = *(volatile u32 *)(SCU_REG_BASE + 0x300);
++            clk1 |= BIT(10);
++            *(volatile u32 *)(SCU_REG_BASE + 0x300) = clk1;
++
++            clk2 = *(volatile u32 *)(SCU_REG_BASE + 0x308);
++            clk2 |= BIT(12);
++            *(volatile u32 *)(SCU_REG_BASE + 0x308) = clk2;
++	    
++	    if(type == 0 || type == 2)
++	    {
++		*(volatile u32 *)(DP_MCU_ADDR + 0xde0) = DP_1280;
++	    }
++	}
++	else if(hdisplay == 800 && vdisplay == 600)
++	{
++	    /* 40 mhz */
++	    clk1 = *(volatile u32 *)(SCU_REG_BASE + 0x300);
++	    clk1 |= BIT(9);
++	    *(volatile u32 *)(SCU_REG_BASE + 0x300) = clk1;
++
++	    if(type == 0 || type == 2)
++            {
++                *(volatile u32 *)(DP_MCU_ADDR + 0xde0) = DP_800;
++            }
++	}
++	else
++	{
++	    /* 75 mhz */
++            clk1 = *(volatile u32 *)(SCU_REG_BASE + 0x300);
++            clk1 |= (BIT(10)|BIT(9)|BIT(8));
++            *(volatile u32 *)(SCU_REG_BASE + 0x300) = clk1;
++
++            clk2 = *(volatile u32 *)(SCU_REG_BASE + 0x308);
++            clk2 |= (BIT(16)|BIT(15)|BIT(13)|BIT(12));
++            *(volatile u32 *)(SCU_REG_BASE + 0x308) = clk2;
++	    
++	    if(type == 0 || type == 2)
++	    {
++		*(volatile u32 *)(DP_MCU_ADDR + 0xde0) = DP_1024;
++	    }
++	}
++
++	udelay(DELAY);
++	
++	scu_c0 = *(volatile u32 *)(SCU_REG_BASE + 0xc0);
++	scu_c0 &= ~(BIT(16) | BIT(18));
++	*(volatile u32 *)(SCU_REG_BASE + 0xc0) = scu_c0;
++
++	scu_c0 = *(volatile u32 *)(SCU_REG_BASE + 0xc0);
++
++	if(type == 0)
++	{
++	    scu_c0 |= BIT(16) | BIT(18);
++	}
++	else if( type == 1)
++	{
++	    scu_c0 |= BIT(16);
++	}
++	else if( type == 2)
++	{
++	    scu_c0 |= BIT(18);
++	}
++	else
++	{
++	    scu_c0 |= BIT(16);
++	}
++
++	*(volatile u32 *)(SCU_REG_BASE + 0xc0) = scu_c0;
++
++	udelay(DELAY);
++	
++	dp_reg = *(volatile u32 *)(DP_ADDR + 0xb8);
++	dp_reg &= ~DP_CONTROL_FROM_SOC;
++	*(volatile u32 *)(DP_ADDR + 0xb8) = dp_reg;
++
++	if(type == 0 || type == 2)
++	{
++	    dp_reg = *(volatile u32 *)(DP_ADDR + 0xb8);
++
++	    dp_reg |= DP_CONTROL_FROM_SOC;
++
++	    *(volatile u32 *)(DP_ADDR + 0xb8) = dp_reg;
++	}
++
++        /* Graphics Display Controller hdisplay * vdisplay bpp*/
++	*(volatile u32 *)(GFX_REG_BASE + 0x70) = (CRT_H_TOTAL(htotal - 1) | CRT_H_DE(hdisplay - 1));
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x74) = (CRT_H_RS_START(hsync_start - 1) | CRT_H_RS_END(hsync_end));
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x78) = (CRT_V_TOTAL(vtotal - 1) | CRT_V_DE(vdisplay - 1));
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x7C) = (CRT_V_RS_START(vsync_start) | CRT_V_RS_END(vsync_end));
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x80) = DISP_START_ADDR;// CRT Display Starting Address
++
++        *(volatile u32 *)(GFX_REG_BASE + 0x84) = CRT_DISP_OFFSET(d_offset) | CRT_TERM_COUNT(t_count);// CRT Display Offset & Terminal Count
++        *(volatile u32 *)(GFX_REG_BASE + 0x88) = G6_CRT_THROD_VAL;// CRT Threshold
++
++	ctrl1 |= BIT(0);//enable crt gfx display
++	ctrl1 |= BIT(8);//color format, XRGB8888
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x60) = ctrl1;
++
++	ctrl2 |= BIT(0);
++
++	*(volatile u32 *)(GFX_REG_BASE + 0x64) = ctrl2;
++
++        udelay(DELAY);
+ 	return CONFIG_DISPLAY_ADDRESS;
+ }
+ #endif
++/*
++          Active                 Front           Sync           Back
++         Region                 Porch                          Porch
++<-----------------------><----------------><-------------><-------------->
++  //////////////////////|
++ ////////////////////// |      h(24)           h(136)          h(160)
++                               v(3)            v(6)            v(29)
++//////////////////////  |..................               ................
++                                           _______________
++
++<----- [hv]display ----->
++       hdisplay(1024)
++       vdisplay(768)
++<------------- [hv]sync_start ------------>
++	       hsync start(1048)
++	       vsync start(771)
++<--------------------- [hv]sync_end --------------------->
++                       hsysnc end (1184)
++		       vsysnc end (777)
++
++<-------------------------------- [hv]total ----------------------------->*
++                                  htotal (1134)
++				  vtotal (806)
++
++.hdisplay = 1024,
++.hsync_start = 1024 + 24,
++.hsync_end = 1024 + 24 + 136,
++.htotal = 1024 + 24 + 136 + 160,
++.vdisplay = 768,
++.vsync_start = 768 + 3,
++.vsync_end = 768 + 3 + 6,
++.vtotal = 768 + 3 + 6 + 29,
++
++ref:
++https://www.kernel.org/doc/html/v4.8/gpu/drm-kms.html
+ 
++*/
+ 
+ #endif /* CONFIG_BOOTLOGO_SUPPORT */

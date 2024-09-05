@@ -1,0 +1,39 @@
+--- uboot_orig/oem/ami/fmh/cmd_fmh.c	2022-04-08 12:01:21.782194344 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2022-04-08 12:11:03.876717163 +0530
+@@ -572,13 +572,15 @@
+         	puts("\nspi_flash_probe failed");
+         	hang();
+     	}
+-	flashsize = CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
++	flashsize = flash->size;
+                 SectorSize = 0x10000;
+         SectorCount = flashsize/SectorSize;
+         for (i=0;i<SectorCount;)
+         {
+                 #ifdef CONFIG_SPX_FEATURE_GLOBAL_DUAL_IMAGE_SUPPORT
++		#ifndef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
+                 if( (i*SectorSize) >= (2 * CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE) ) { break; }
++		#endif
+                 #else
+                 if( (i*SectorSize) >= CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE ) { break; }
+                 #endif
+@@ -886,7 +888,7 @@
+ 	}
+ 
+ 
+-	flashsize = flash->size;
++	flashsize = 2*(flash->size);
+ 	SectorSize = 0x10000;
+ 	SectorCount = flashsize/SectorSize;
+         memset(&platform_ver,0,sizeof(platform_ver));
+@@ -1318,8 +1320,8 @@
+     {
+ #if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ 	flash = flashspi[1];
+-	StartingSector = CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
+-	SectorCount=StartingSector+CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
++	StartingSector = flash->size;
++	SectorCount=StartingSector+flash->size;
+ 	startaddress=CE1_ADDRESS_SEGMENT;
+ 	StartingSector/=SectorSize;
+ 	SectorCount/=SectorSize;

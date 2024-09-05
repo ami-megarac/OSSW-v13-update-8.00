@@ -1,0 +1,38 @@
+--- busybox_old/networking/ifupdown.c	2022-11-11 19:31:49.742332207 +0530
++++ busybox/networking/ifupdown.c	2022-11-11 19:32:02.734375344 +0530
+@@ -409,11 +409,14 @@
+ 
+ static int FAST_FUNC static_down6(struct interface_defn_t *ifd, execfn *exec)
+ {
++	int result = 0;
+ # if ENABLE_FEATURE_IFUPDOWN_IP
+-	return execute("ip link set %iface% down", ifd, exec);
++	result = execute("ip link set %iface% down", ifd, exec);
+ # else
+-	return execute("ifconfig %iface% down", ifd, exec);
++	result = execute("ip -f inet6 addr flush dev %iface%", ifd, exec);
++	result += execute("ifconfig %iface% down", ifd, exec);
+ # endif
++	return result;
+ }
+ 
+ 
+@@ -439,7 +442,8 @@
+ # if ENABLE_FEATURE_IFUPDOWN_IP
+ 	result= execute("ip link set %iface% down", ifd, exec);
+ # else
+-	result= execute("ifconfig %iface% down", ifd, exec);
++	result= execute("ip -f inet6 addr flush dev %iface%", ifd, exec);
++	result+= execute("ifconfig %iface% down", ifd, exec);
+ # endif
+    return (result);
+ }
+@@ -543,7 +547,7 @@
+ 	/* result = execute("[[route del default gw %gateway% %iface%]]", ifd, exec); */
+ 	/* Bringing the interface down deletes the routes in itself.
+ 	   Otherwise this fails if we reference 'gateway' when using this from dhcp_down */
+-	result = execute("ifconfig %iface% 0.0.0.0", ifd, exec);
++	result = execute("ip -f inet addr flush dev %iface%", ifd, exec);
+     result += execute("ifconfig %iface% down", ifd, exec);
+ # endif
+ 	return ((result == 2) ? 2 : 0);

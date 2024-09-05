@@ -1,0 +1,34 @@
+diff -Naur busybox-ori/networking/ifupdown.c busybox/networking/ifupdown.c
+--- busybox-ori/networking/ifupdown.c	2022-10-13 18:29:32.338221918 +0800
++++ busybox/networking/ifupdown.c	2022-10-13 18:29:32.338221918 +0800
+@@ -140,6 +140,7 @@
+ 	"post-down\0"
+ ;
+ 
++static char iface_family[16] = { 0 };
+ 
+ #if ENABLE_FEATURE_IFUPDOWN_IPV4 || ENABLE_FEATURE_IFUPDOWN_IPV6
+ 
+@@ -404,7 +405,13 @@
+ 	result += execute("ifconfig %iface% add %address%/%netmask%", ifd, exec);
+ 	result += execute("[[route -A inet6 add ::/0 gw %gateway%[[ metric %metric%]] %iface%]]", ifd, exec);
+ # endif
+-	return ((result == 3) ? 3 : 0);
++	// Prevent interface not up when no Ipv6 address provide in static mode via launching ipmi command
++	if (strncmp(iface_family, ifd->address_family->name,sizeof(iface_family)) == 0) {
++		return ((result > 0) ? result : 0);
++	} // if
++	else {
++		return ((result == 3) ? 3 : 0);
++	} // elseh
+ }
+ 
+ static int FAST_FUNC static_down6(struct interface_defn_t *ifd, execfn *exec)
+@@ -1225,7 +1232,6 @@
+ 	llist_t *target_list = NULL;
+ 	const char *interfaces = "/etc/network/interfaces";
+ 	bool any_failures = 0;
+-	char iface_family[16] = { 0 };
+ 	FILE *fp = NULL;
+ 
+ 	INIT_G();

@@ -1,0 +1,14 @@
+--- uboot/include/configs/aspeed-common.h	2022-11-17 10:21:00.214481010 +0800
++++ uboot-new/include/configs/aspeed-common.h	2022-11-17 11:30:51.438818316 +0800
+@@ -56,11 +56,8 @@
+ 
+ /* BigPhys Area*/
+ #ifdef CONFIG_SPX_FEATURE_GLOBAL_FRAME_BUFFER_SUPPORT
+-#define CONFIG_BIGPHYSAREA          "8192"
+ #define CONFIG_BOOTLOGO_SUPPORT     1 //Show Logo during Booting
+ #define CONFIG_DISPLAY_ADDRESS      0x83000000
+-#else
+-#define CONFIG_BIGPHYSAREA          "6144"
+ #endif
+ 
+ #define CONFIG_MEMTEST_ENABLE       0

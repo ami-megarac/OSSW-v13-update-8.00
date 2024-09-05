@@ -1,0 +1,70 @@
+#!/bin/sh
+# /etc/init.d/amd_remote_debug_init
+#
+# chkconfig: 2345 10 90
+#Runlevel : S = S63
+#Runlevel : 6 = K63
+# Restart the service on warm reboot
+#Runlevel : 9 = K63
+#Runlevel : 9 = S63
+
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+test -f /usr/local/bin/AMDRemoteDebugServer || exit 0
+
+file_name="/etc/core_features"
+isFeatureEnable()
+{
+	if [ -f $file_name ]; then
+
+		target=$(grep $1 $file_name)
+		if [ $target == $1 ]; then
+			return 1
+		else	
+	  		return 0
+		fi
+	fi
+}
+
+case "$1" in
+  start)
+    isFeatureEnable CONFIG_SPX_FEATURE_AMD_REMOTE_DBG_AUTO_SUPPORT
+    if [ $? != 1 ]; then
+        echo "Auto Start is not Enable, Please use IPMI Cmd to start server."
+        echo "or" 
+        echo "Use: $0 manual"
+        exit 0
+	fi
+    
+    echo -n "Starting Execution Daemon"
+    /usr/local/bin/AMDRemoteDebugServer START &
+    echo "."
+    ;;
+  manual)
+    echo -n "Starting Execution Daemon"
+    /usr/local/bin/AMDRemoteDebugServer START &
+    echo "."
+    ;;
+  stop)
+    echo -n "Stopping Execution Daemon"
+    killall AMDRemoteDebugServer
+    rm /var/run/AMDRemoteDebugServer.pid
+    echo "."
+    ;;
+  restart)
+	echo -n "Restarting Execution Daemon"
+	killall AMDRemoteDebugServer
+    rm /var/run/AMDRemoteDebugServer.pid
+	/usr/local/bin/AMDRemoteDebugServer START &
+	echo "."
+	;;
+   *)
+    echo "Usage: $0 {start|manual|stop|restart}"
+    exit 1
+esac
+
+exit 0
+
+
+

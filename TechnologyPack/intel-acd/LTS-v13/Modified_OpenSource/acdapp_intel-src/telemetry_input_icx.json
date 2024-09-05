@@ -1,0 +1,606 @@
+{
+  "cpu": "icx2",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "PECIHeaders": {
+    "CrashDump_Discovery": ["Target", "Opcode", "Param0", "Param1", "Param2", "ReadLen"],
+    "CrashDump_GetFrame": ["Target", "Param0", "Param1", "Param2", "ReadLen"],
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdIAMSR": ["Target", "Thread", "Address"],
+    "RdPkgConfig": ["Target", "Index", "Param", "ReadLen"],
+    "RdPCIConfigLocal": ["Target", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndPointConfigPciLocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "WrEndPointPCIConfigLocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen", "Value"],
+    "RdEndPointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Offset", "ReadLen"],
+    "Telemetry_Discovery": ["Target", "Opcode", "Param0", "Param1", "Param2", "ReadLen"]
+  },
+  "Sections": [
+    {
+      "Metadata_Cpu_Early": {
+        "RecordEnable": true,
+        "RecordType": "0x0b",
+        "ProductType": "0x1a",
+        "Revision": "0x01",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 10,
+        "RootAtLevel": 3,
+        "OutputPath": "crash_data/METADATA/cpu%d",
+        "PreReq": {
+          "PECICmds": [
+            {
+              "RdGlobalVars": [
+                {"Params": ["peci_addr"], "Output": {"Name": ["peci_id"]}},
+                {"Params": ["cpuid"], "Output": {"Name": ["cpuid"]}},
+                {"Params": ["cpuid_source"], "Output": {"Name": ["_cpuid_source"]}},
+                {"Params": ["coremask_source"], "Output": {"Name": ["_core_mask_source"]}},
+                {"Params": ["chacount_source"], "Output": {"Name": ["_cha_count_source"]}},
+                {"Params": ["coremask"], "Output": {"Name": ["core_mask"]}},
+                {"Params": ["chacount"], "Output": {"Name": ["cha_count"]}},
+                {"Params": ["corecount"], "Output": {"Name": ["core_count"]}}
+              ]
+            },
+            {
+              "RdPkgConfig": [
+                {"Params": ["Target", 19, 1, 4], "InternalVar": "ppin_low"},
+                {"Params": ["Target", 19, 2, 4], "InternalVar": "ppin_high"}
+              ]
+            },
+            {
+              "RdEndpointConfigPCILocal": [
+                {"Params": ["Target", 0, 31, 30, 3, "0x9c", 4], "InternalVar": "chamask0"},
+                {"Params": ["Target", 0, 31, 30, 3, "0xa0", 4], "InternalVar": "chamask1"},
+                {"Params": ["Target", 0, 14, 30, 4, "0xF8", 4], "InternalVar": "firstierrtsc_low"},
+                {"Params": ["Target", 0, 14, 30, 4, "0xFC", 4], "InternalVar": "firstierrtsc_high"},
+                {"Params": ["Target", 0, 14, 30, 4, "0xF0", 4], "InternalVar": "firstmcerrtsc_low"},
+                {"Params": ["Target", 0, 14, 30, 4, "0xF4", 4], "InternalVar": "firstmcerrtsc_high"}
+              ]
+            }
+          ]
+        },
+        "PECICmds": [
+          {
+            "SaveStrVars":[
+              {"Params":["N/A"],"Output":{"Name":["package_id"]}}
+            ]
+          },
+          {
+            "RdAndConcatenate": [
+              {"Params": ["chamask0", "chamask1"], "Output": {"Size": 8,"Name": ["cha_mask"]}},
+              {"Params": ["ppin_low", "ppin_high"], "Output": {"Size": 8,"Name": ["ppin"], "ZeroPadded": true}},
+              {"Params": ["firstierrtsc_low", "firstierrtsc_high"], "Output": {"Size": 8,"Name": ["firstierrtsc"]}},
+              {"Params": ["firstmcerrtsc_low", "firstmcerrtsc_high"], "Output": {"Size": 8,"Name": ["firstmcerrtsc"]}}
+            ]
+          },
+          {
+            "RdEndpointConfigPCILocal": [
+              {"Params": ["Target", 0, 13, 0, 0, "0xA4", 4], "Output": {"Name": ["ierrloggingreg"]}},
+              {"Params": ["Target", 0, 13, 0, 0, "0xA8", 4], "Output": {"Name": ["mcerrloggingreg"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xEC", 4], "Output": {"Name": ["mca_err_src_log"]}}
+            ]
+          },
+          {
+            "RdPkgConfig": [
+              {"Params": ["Target", 0, 4, 4],"Output": {"Name":["ucode_patch_ver"]}},
+              {"Params": ["Target", 0, 1, 4],"Output": {"Name":["platform_id"]}}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "MCA_UNCORE":{
+        "RecordEnable": false,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/MCA"
+      }
+    },
+    {
+      "MCA_CBO": {
+        "RecordEnable": false
+      }
+    },
+    {
+      "Uncore_PCI": {
+        "RecordEnable": true,
+        "RecordType": "0x08",
+        "ProductType": "0x1a",
+        "Revision": "0x01",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdEndpointConfigPCILocal": [
+              {"Params": ["Target", 0, 0, 0, 1, "0x144", 4], "Output": {"Name": ["B00_D00_F1_0x144"]}},
+              {"Params": ["Target", 0, 0, 0, 1, "0x1E0", 4], "Output": {"Name": ["B00_D00_F1_0x1E0"]}},
+              {"Params": ["Target", 0, 0, 0, 3, "0x9d8", 4], "Output": {"Name": ["B00_D00_F3_0x9d8"]}},
+              {"Params": ["Target", 0, 0, 0, 4, "0x200", 4], "Output": {"Name": ["B00_D00_F4_0x200"]}},
+              {"Params": ["Target", 0, 0, 0, 4, "0x210", 4], "Output": {"Name": ["B00_D00_F4_0x210"]}},
+              {"Params": ["Target", 0, 0, 0, 4, "0x220", 4], "Output": {"Name": ["B00_D00_F4_0x220"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x6", 2], "Output": {"Name": ["B00_D03_F0_0x6"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x14C", 4], "Output": {"Name": ["B00_D03_F0_0x14C"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x158", 4], "Output": {"Name": ["B00_D03_F0_0x158"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x178", 4], "Output": {"Name": ["B00_D03_F0_0x178"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x1B2", 2], "Output": {"Name": ["B00_D03_F0_0x1B2"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x200", 4], "Output": {"Name": ["B00_D03_F0_0x200"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x208", 4], "Output": {"Name": ["B00_D03_F0_0x208"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x258", 4], "Output": {"Name": ["B00_D03_F0_0x258"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x4C0", 4], "Output": {"Name": ["B00_D03_F0_0x4C0"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x4D0", 4], "Output": {"Name": ["B00_D03_F0_0x4D0"]}},
+              {"Params": ["Target", 0, 0, 3, 0, "0x5C8", 8], "Output": {"Name": ["B00_D03_F0_0x5C8"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x3F8", 4], "Output": {"Name": ["B00_D03_F1_0x3F8"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x4A0", 4], "Output": {"Name": ["B00_D03_F1_0x4A0"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x4B4", 4], "Output": {"Name": ["B00_D03_F1_0x4B4"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x4E4", 4], "Output": {"Name": ["B00_D03_F1_0x4E4"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x4E8", 4], "Output": {"Name": ["B00_D03_F1_0x4E8"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0x5D0", 4], "Output": {"Name": ["B00_D03_F1_0x5D0"]}},
+              {"Params": ["Target", 0, 0, 3, 1, "0xE08", 4], "Output": {"Name": ["B00_D03_F1_0xE08"]}},
+              {"Params": ["Target", 0, 1, 0, 3, "0x9d8", 4], "Output": {"Name": ["B01_D00_F3_0x9d8"]}},
+              {"Params": ["Target", 0, 1, 0, 4, "0x200", 4], "Output": {"Name": ["B01_D00_F4_0x200"]}},
+              {"Params": ["Target", 0, 1, 0, 4, "0x210", 4], "Output": {"Name": ["B01_D00_F4_0x210"]}},
+              {"Params": ["Target", 0, 1, 0, 4, "0x220", 4], "Output": {"Name": ["B01_D00_F4_0x220"]}},
+              {"Params": ["Target", 0, 1, 2, 0, "0x52", 2], "Output": {"Name": ["B01_D02_F0_0x52"]}},
+              {"Params": ["Target", 0, 1, 2, 0, "0x764", 4], "Output": {"Name": ["B01_D02_F0_0x764"]}},
+              {"Params": ["Target", 0, 1, 2, 0, "0xA68", 4], "Output": {"Name": ["B01_D02_F0_0xA68"]}},
+              {"Params": ["Target", 0, 1, 2, 0, "0xA80", 4], "Output": {"Name": ["B01_D02_F0_0xA80"]}},
+              {"Params": ["Target", 0, 1, 3, 0, "0x764", 4], "Output": {"Name": ["B01_D03_F0_0x764"]}},
+              {"Params": ["Target", 0, 1, 4, 0, "0x764", 4], "Output": {"Name": ["B01_D04_F0_0x764"]}},
+              {"Params": ["Target", 0, 1, 5, 0, "0x764", 4], "Output": {"Name": ["B01_D05_F0_0x764"]}},
+              {"Params": ["Target", 0, 2, 0, 3, "0x9D8", 4], "Output": {"Name": ["B02_D00_F3_0x9D8"]}},
+              {"Params": ["Target", 0, 2, 0, 4, "0x200", 4], "Output": {"Name": ["B02_D00_F4_0x200"]}},
+              {"Params": ["Target", 0, 2, 0, 4, "0x210", 4], "Output": {"Name": ["B02_D00_F4_0x210"]}},
+              {"Params": ["Target", 0, 2, 0, 4, "0x220", 4], "Output": {"Name": ["B02_D00_F4_0x220"]}},
+              {"Params": ["Target", 0, 2, 2, 0, "0x764", 4], "Output": {"Name": ["B02_D02_F0_0x764"]}},
+              {"Params": ["Target", 0, 2, 3, 0, "0x764", 4], "Output": {"Name": ["B02_D03_F0_0x764"]}},
+              {"Params": ["Target", 0, 2, 4, 0, "0x764", 4], "Output": {"Name": ["B02_D04_F0_0x764"]}},
+              {"Params": ["Target", 0, 2, 5, 0, "0x764", 4], "Output": {"Name": ["B02_D05_F0_0x764"]}},
+              {"Params": ["Target", 0, 4, 2, 0, "0x764", 4], "Output": {"Name": ["B04_D02_F0_0x764"]}},
+              {"Params": ["Target", 0, 4, 3, 0, "0x764", 4], "Output": {"Name": ["B04_D03_F0_0x764"]}},
+              {"Params": ["Target", 0, 4, 4, 0, "0x764", 4], "Output": {"Name": ["B04_D04_F0_0x764"]}},
+              {"Params": ["Target", 0, 4, 5, 0, "0x764", 4], "Output": {"Name": ["B04_D05_F0_0x764"]}},
+              {"Params": ["Target", 0, 4, 0, 3, "0x9D8", 4], "Output": {"Name": ["B04_D00_F3_0x9D8"]}},
+              {"Params": ["Target", 0, 5, 0, 4, "0x200", 4], "Output": {"Name": ["B05_D00_F4_0x200"]}},
+              {"Params": ["Target", 0, 5, 0, 4, "0x210", 4], "Output": {"Name": ["B05_D00_F4_0x210"]}},
+              {"Params": ["Target", 0, 5, 0, 4, "0x220", 4], "Output": {"Name": ["B05_D00_F4_0x220"]}},
+              {"Params": ["Target", 0, 13, 0, 3, "0x200", 4], "Output": {"Name": ["B30_D00_F3_0x200"]}},
+              {"Params": ["Target", 0, 13, 0, 3, "0x204", 4], "Output": {"Name": ["B30_D00_F3_0x204"]}},
+              {"Params": ["Target", 0, 13, 0, 3, "0x210", 4], "Output": {"Name": ["B30_D00_F3_0x210"]}},
+              {"Params": ["Target", 0, 13, 0, 3, "0x220", 4], "Output": {"Name": ["B30_D00_F3_0x220"]}},
+              {"Params": ["Target", 0, 5, 2, 0, "0x764", 4], "Output": {"Name": ["B05_D02_F0_0x764"]}},
+              {"Params": ["Target", 0, 5, 3, 0, "0x764", 4], "Output": {"Name": ["B05_D03_F0_0x764"]}},
+              {"Params": ["Target", 0, 5, 4, 0, "0x764", 4], "Output": {"Name": ["B05_D04_F0_0x764"]}},
+              {"Params": ["Target", 0, 5, 5, 0, "0x764", 4], "Output": {"Name": ["B05_D05_F0_0x764"]}},
+              {"Params": ["Target", 0, 5, 0, 3, "0X9D8", 4], "Output": {"Name": ["B05_D00_F3_0X9D8"]}},
+              {"Params": ["Target", 0, 13, 0, 0, "0xA0", 4], "Output": {"Name": ["B30_D00_F0_0xA0"]}},
+              {"Params": ["Target", 0, 13, 0, 0, "0xA4", 4], "Output": {"Name": ["B30_D00_F0_0xA4"]}},
+              {"Params": ["Target", 0, 13, 0, 0, "0xA8", 4], "Output": {"Name": ["B30_D00_F0_0xA8"]}},
+              {"Params": ["Target", 0, 13, 0, 0, "0xE4", 4], "Output": {"Name": ["B30_D00_F0_0xE4"]}},
+              {"Params": ["Target", 0, 13, 12, 0, "0x1A0", 4], "Output": {"Name": ["B30_D12_F0_0x1A0"]}},
+              {"Params": ["Target", 0, 13, 13, 0, "0x1A0", 4], "Output": {"Name": ["B30_D13_F0_0x1A0"]}},
+              {"Params": ["Target", 0, 13, 14, 0, "0x1A0", 4], "Output": {"Name": ["B30_D14_F0_0x1A0"]}},
+              {"Params": ["Target", 0, 13, 15, 0, "0x1A0", 4], "Output": {"Name": ["B30_D15_F0_0x1A0"]}},
+              {"Params": ["Target", 0, 14, 0, 0, "0x260", 4], "Output": {"Name": ["B31_D00_F0_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 1, "0x260", 4], "Output": {"Name": ["B31_D00_F1_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 2, "0x260", 4], "Output": {"Name": ["B31_D00_F2_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 3, "0x260", 4], "Output": {"Name": ["B31_D00_F3_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 4, "0x260", 4], "Output": {"Name": ["B31_D00_F4_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 5, "0x260", 4], "Output": {"Name": ["B31_D00_F5_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 6, "0x260", 4], "Output": {"Name": ["B31_D00_F6_0x260"]}},
+              {"Params": ["Target", 0, 14, 0, 7, "0x260", 4], "Output": {"Name": ["B31_D00_F7_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 0, "0x260", 4], "Output": {"Name": ["B31_D01_F0_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 1, "0x260", 4], "Output": {"Name": ["B31_D01_F1_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 2, "0x260", 4], "Output": {"Name": ["B31_D01_F2_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 3, "0x260", 4], "Output": {"Name": ["B31_D01_F3_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 4, "0x260", 4], "Output": {"Name": ["B31_D01_F4_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 5, "0x260", 4], "Output": {"Name": ["B31_D01_F5_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 6, "0x260", 4], "Output": {"Name": ["B31_D01_F6_0x260"]}},
+              {"Params": ["Target", 0, 14, 1, 7, "0x260", 4], "Output": {"Name": ["B31_D01_F7_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 0, "0x260", 4], "Output": {"Name": ["B31_D02_F0_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 1, "0x260", 4], "Output": {"Name": ["B31_D02_F1_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 2, "0x260", 4], "Output": {"Name": ["B31_D02_F2_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 3, "0x260", 4], "Output": {"Name": ["B31_D02_F3_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 4, "0x260", 4], "Output": {"Name": ["B31_D02_F4_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 5, "0x260", 4], "Output": {"Name": ["B31_D02_F5_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 6, "0x260", 4], "Output": {"Name": ["B31_D02_F6_0x260"]}},
+              {"Params": ["Target", 0, 14, 2, 7, "0x260", 4], "Output": {"Name": ["B31_D02_F7_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 0, "0x260", 4], "Output": {"Name": ["B31_D03_F0_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 1, "0x260", 4], "Output": {"Name": ["B31_D03_F1_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 2, "0x260", 4], "Output": {"Name": ["B31_D03_F2_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 3, "0x260", 4], "Output": {"Name": ["B31_D03_F3_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 4, "0x260", 4], "Output": {"Name": ["B31_D03_F4_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 5, "0x260", 4], "Output": {"Name": ["B31_D03_F5_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 6, "0x260", 4], "Output": {"Name": ["B31_D03_F6_0x260"]}},
+              {"Params": ["Target", 0, 14, 3, 7, "0x260", 4], "Output": {"Name": ["B31_D03_F7_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 0, "0x260", 4], "Output": {"Name": ["B31_D04_F0_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 1, "0x260", 4], "Output": {"Name": ["B31_D04_F1_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 2, "0x260", 4], "Output": {"Name": ["B31_D04_F2_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 3, "0x260", 4], "Output": {"Name": ["B31_D04_F3_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 4, "0x260", 4], "Output": {"Name": ["B31_D04_F4_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 5, "0x260", 4], "Output": {"Name": ["B31_D04_F5_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 6, "0x260", 4], "Output": {"Name": ["B31_D04_F6_0x260"]}},
+              {"Params": ["Target", 0, 14, 4, 7, "0x260", 4], "Output": {"Name": ["B31_D04_F7_0x260"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0x88", 4], "Output": {"Name": ["B31_D30_F0_0x88"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0x90", 4], "Output": {"Name": ["B31_D30_F0_0x90"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0xBC", 4], "Output": {"Name": ["B31_D30_F0_0xBC"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0xC8", 4], "Output": {"Name": ["B31_D30_F0_0xC8"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0xCC", 4], "Output": {"Name": ["B31_D30_F0_0xCC"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0xE0", 4], "Output": {"Name": ["B31_D30_F0_0xE0"]}},
+              {"Params": ["Target", 0, 14, 30, 0, "0xE4", 4], "Output": {"Name": ["B31_D30_F0_0xE4"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0x80", 4], "Output": {"Name": ["B31_D30_F2_0x80"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0x84", 4], "Output": {"Name": ["B31_D30_F2_0x84"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0x88", 4], "Output": {"Name": ["B31_D30_F2_0x88"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xC0", 4], "Output": {"Name": ["B31_D30_F2_0xC0"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xC4", 4], "Output": {"Name": ["B31_D30_F2_0xC4"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xC8", 4], "Output": {"Name": ["B31_D30_F2_0xC8"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xCC", 4], "Output": {"Name": ["B31_D30_F2_0xCC"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xD0", 4], "Output": {"Name": ["B31_D30_F2_0xD0"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xD4", 4], "Output": {"Name": ["B31_D30_F2_0xD4"]}},
+              {"Params": ["Target", 0, 14, 30, 2, "0xD8", 4], "Output": {"Name": ["B31_D30_F2_0xD8"]}},
+              {"Params": ["Target", 0, 14, 30, 4, "0xD0", 4], "Output": {"Name": ["B31_D30_F4_0xD0"]}},
+              {"Params": ["Target", 0, 14, 30, 4, "0xD8", 4], "Output": {"Name": ["B31_D30_F4_0xD8"]}},
+              {"Params": ["Target", 0, 13, 2, 0, "0x6", 2], "Output": {"Name": ["B30_D2_F0_0x0x6"]}},
+              {"Params": ["Target", 0, 13, 2, 0, "0xd4", 4], "Output": {"Name": ["B30_D2_F0_0x0xd4"]}},
+              {"Params": ["Target", 0, 13, 2, 0, "0xec", 4], "Output": {"Name": ["B30_D2_F0_0x0xec"]}},
+              {"Params": ["Target", 0, 13, 2, 0, "0x1d0", 4], "Output": {"Name": ["B30_D2_F0_0x0x1d0"]}},
+              {"Params": ["Target", 0, 13, 2, 0, "0x304", 4], "Output": {"Name": ["B30_D2_F0_0x0x304"]}},
+              {"Params": ["Target", 0, 13, 3, 0, "0x6", 2], "Output": {"Name": ["B30_D3_F0_0x0x6"]}},
+              {"Params": ["Target", 0, 13, 3, 0, "0xd4", 4], "Output": {"Name": ["B30_D3_F0_0x0xd4"]}},
+              {"Params": ["Target", 0, 13, 3, 0, "0xec", 4], "Output": {"Name": ["B30_D3_F0_0x0xec"]}},
+              {"Params": ["Target", 0, 13, 3, 0, "0x1d0", 4], "Output": {"Name": ["B30_D3_F0_0x0x1d0"]}},
+              {"Params": ["Target", 0, 13, 3, 0, "0x304", 4], "Output": {"Name": ["B30_D3_F0_0x0x304"]}},
+              {"Params": ["Target", 0, 13, 4, 0, "0x6", 2], "Output": {"Name": ["B30_D4_F0_0x0x6"]}},
+              {"Params": ["Target", 0, 13, 4, 0, "0xd4", 4], "Output": {"Name": ["B30_D4_F0_0x0xd4"]}},
+              {"Params": ["Target", 0, 13, 4, 0, "0xec", 4], "Output": {"Name": ["B30_D4_F0_0x0xec"]}},
+              {"Params": ["Target", 0, 13, 4, 0, "0x1d0", 4], "Output": {"Name": ["B30_D4_F0_0x0x1d0"]}},
+              {"Params": ["Target", 0, 13, 4, 0, "0x304", 4], "Output": {"Name": ["B30_D4_F0_0x0x304"]}},
+              {"Params": ["Target", 0, 13, 2, 1, "0x108", 4], "Output": {"Name": ["B30_D2_F1_0x0x108"]}},
+              {"Params": ["Target", 0, 13, 3, 1, "0x108", 4], "Output": {"Name": ["B30_D3_F1_0x0x108"]}},
+              {"Params": ["Target", 0, 13, 4, 1, "0x108", 4], "Output": {"Name": ["B30_D4_F1_0x0x108"]}},
+              {"Params": ["Target", 0, 13, 2, 1, "0x10c", 4], "Output": {"Name": ["B30_D2_F1_0x0x10c"]}},
+              {"Params": ["Target", 0, 13, 3, 1, "0x10c", 4], "Output": {"Name": ["B30_D3_F1_0x0x10c"]}},
+              {"Params": ["Target", 0, 13, 4, 1, "0x10c", 4], "Output": {"Name": ["B30_D4_F1_0x0x10c"]}},
+              {"Params": ["Target", 0, 13, 2, 1, "0x114", 4], "Output": {"Name": ["B30_D2_F1_0x0x114"]}},
+              {"Params": ["Target", 0, 13, 3, 1, "0x114", 4], "Output": {"Name": ["B30_D3_F1_0x0x114"]}},
+              {"Params": ["Target", 0, 13, 4, 1, "0x114", 4], "Output": {"Name": ["B30_D4_F1_0x0x114"]}},
+              {"Params": ["Target", 0, 13, 2, 1, "0x118", 4], "Output": {"Name": ["B30_D2_F1_0x0x118"]}},
+              {"Params": ["Target", 0, 13, 3, 1, "0x118", 4], "Output": {"Name": ["B30_D3_F1_0x0x118"]}},
+              {"Params": ["Target", 0, 13, 4, 1, "0x118", 4], "Output": {"Name": ["B30_D4_F1_0x0x118"]}},
+              {"Params": ["Target", 0, 13, 2, 1, "0x11c", 4], "Output": {"Name": ["B30_D2_F1_0x0x11c"]}},
+              {"Params": ["Target", 0, 13, 3, 1, "0x11c", 4], "Output": {"Name": ["B30_D3_F1_0x0x11c"]}},
+              {"Params": ["Target", 0, 13, 4, 1, "0x11c", 4], "Output": {"Name": ["B30_D4_F1_0x0x11c"]}}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "Uncore_MMIO": {
+        "RecordEnable": true,
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore",
+        "PreReq": {
+          "PECICmds": [
+              {
+                "RdPkgConfig": [
+                  {"Params": ["Target", 76, 5, 4], "Output": {"Name": ["cpubusno_valid"]}, "InternalVar": "CPUBusNumValid"},
+                  {"Params": ["Target", 76, 4, 4], "Output": {"Name": ["cpubusno2"]}, "InternalVar": "CPUBusNum"}
+                ]
+              },
+              {
+                "RdPostEnumBus": [
+                  {"Params": ["CPUBusNumValid", "CPUBusNum", 11, 16], "Output": {"Name": ["post_enum_bus"]}, "InternalVar": "PostEnumBus",
+                  "comment": "if CPUBusNumValid bit 11 is 1, then PostEnumBus = ((CPUBusNum7 >> 16) & 0xff)"}
+                ]
+              }
+          ]
+        },
+        "PECICmds": [
+          {
+            "RdEndpointConfigMMIO": [
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x1BE28", 4], "Output": {"Name": ["B30_D26_F0_0x1BE28"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x2290", 8], "Output": {"Name": ["B30_D26_F0_0x2290"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22A0", 8], "Output": {"Name": ["B30_D26_F0_0x22A0"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x20504", 4], "Output": {"Name": ["B30_D26_F0_0x20504"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x20510", 4], "Output": {"Name": ["B30_D26_F0_0x20510"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x20550", 4], "Output": {"Name": ["B30_D26_F0_0x20550"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x205A8", 4], "Output": {"Name": ["B30_D26_F0_0x205A8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x205AC", 4], "Output": {"Name": ["B30_D26_F0_0x205AC"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x20150", 4], "Output": {"Name": ["B30_D26_F0_0x20150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x20968", 4], "Output": {"Name": ["B30_D26_F0_0x20968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x218C4", 4], "Output": {"Name": ["B30_D26_F0_0x218C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22408", 4], "Output": {"Name": ["B30_D26_F0_0x22408"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22430", 4], "Output": {"Name": ["B30_D26_F0_0x22430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x224C8", 4], "Output": {"Name": ["B30_D26_F0_0x224C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x224D4", 4], "Output": {"Name": ["B30_D26_F0_0x224D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C18", 4], "Output": {"Name": ["B30_D26_F0_0x22C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C1C", 4], "Output": {"Name": ["B30_D26_F0_0x22C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C20", 4], "Output": {"Name": ["B30_D26_F0_0x22C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C24", 4], "Output": {"Name": ["B30_D26_F0_0x22C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C50", 4], "Output": {"Name": ["B30_D26_F0_0x22C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C54", 4], "Output": {"Name": ["B30_D26_F0_0x22C54"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C58", 4], "Output": {"Name": ["B30_D26_F0_0x22C58"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C5C", 4], "Output": {"Name": ["B30_D26_F0_0x22C5C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22C60", 4], "Output": {"Name": ["B30_D26_F0_0x22C60"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x22E54", 4], "Output": {"Name": ["B30_D26_F0_0x22E54"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x23410", 4], "Output": {"Name": ["B30_D26_F0_0x23410"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x23430", 8], "Output": {"Name": ["B30_D26_F0_0x23430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x23460", 4], "Output": {"Name": ["B30_D26_F0_0x23460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x24150", 4], "Output": {"Name": ["B30_D26_F0_0x24150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x24968", 4], "Output": {"Name": ["B30_D26_F0_0x24968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x258C4", 4], "Output": {"Name": ["B30_D26_F0_0x258C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26430", 4], "Output": {"Name": ["B30_D26_F0_0x26430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x264C8", 4], "Output": {"Name": ["B30_D26_F0_0x264C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x264D4", 4], "Output": {"Name": ["B30_D26_F0_0x264D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26C18", 4], "Output": {"Name": ["B30_D26_F0_0x26C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26C1C", 4], "Output": {"Name": ["B30_D26_F0_0x26C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26C20", 4], "Output": {"Name": ["B30_D26_F0_0x26C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26C24", 4], "Output": {"Name": ["B30_D26_F0_0x26C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x26C50", 4], "Output": {"Name": ["B30_D26_F0_0x26C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x27410", 4], "Output": {"Name": ["B30_D26_F0_0x27410"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x27430", 8], "Output": {"Name": ["B30_D26_F0_0x27430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x27460", 4], "Output": {"Name": ["B30_D26_F0_0x27460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x2290", 8], "Output": {"Name": ["B30_D27_F0_0x2290"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22A0", 8], "Output": {"Name": ["B30_D27_F0_0x22A0"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x20150", 4], "Output": {"Name": ["B30_D27_F0_0x20150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x20968", 4], "Output": {"Name": ["B30_D27_F0_0x20968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x218C4", 4], "Output": {"Name": ["B30_D27_F0_0x218C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22408", 4], "Output": {"Name": ["B30_D27_F0_0x22408"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22430", 4], "Output": {"Name": ["B30_D27_F0_0x22430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x224C8", 4], "Output": {"Name": ["B30_D27_F0_0x224C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x224D4", 4], "Output": {"Name": ["B30_D27_F0_0x224D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22C18", 4], "Output": {"Name": ["B30_D27_F0_0x22C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22C1C", 4], "Output": {"Name": ["B30_D27_F0_0x22C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22C20", 4], "Output": {"Name": ["B30_D27_F0_0x22C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22C24", 4], "Output": {"Name": ["B30_D27_F0_0x22C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x22C50", 4], "Output": {"Name": ["B30_D27_F0_0x22C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x23460", 4], "Output": {"Name": ["B30_D27_F0_0x23460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x24150", 4], "Output": {"Name": ["B30_D27_F0_0x24150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x24968", 4], "Output": {"Name": ["B30_D27_F0_0x24968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x258C4", 4], "Output": {"Name": ["B30_D27_F0_0x258C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26430", 4], "Output": {"Name": ["B30_D27_F0_0x26430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x264C8", 4], "Output": {"Name": ["B30_D27_F0_0x264C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x264D4", 4], "Output": {"Name": ["B30_D27_F0_0x264D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26C18", 4], "Output": {"Name": ["B30_D27_F0_0x26C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26C1C", 4], "Output": {"Name": ["B30_D27_F0_0x26C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26C20", 4], "Output": {"Name": ["B30_D27_F0_0x26C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26C24", 4], "Output": {"Name": ["B30_D27_F0_0x26C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x26C50", 4], "Output": {"Name": ["B30_D27_F0_0x26C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x27430", 8], "Output": {"Name": ["B30_D27_F0_0x27430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x27460", 4], "Output": {"Name": ["B30_D27_F0_0x27460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x2290", 8], "Output": {"Name": ["B30_D28_F0_0x2290"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x2290", 8], "Output": {"Name": ["B30_D28_F0_0x2290"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22A0", 8], "Output": {"Name": ["B30_D28_F0_0x22A0"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x20150", 4], "Output": {"Name": ["B30_D28_F0_0x20150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x20968", 4], "Output": {"Name": ["B30_D28_F0_0x20968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x218C4", 4], "Output": {"Name": ["B30_D28_F0_0x218C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22408", 4], "Output": {"Name": ["B30_D28_F0_0x22408"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22430", 4], "Output": {"Name": ["B30_D28_F0_0x22430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x224C8", 4], "Output": {"Name": ["B30_D28_F0_0x224C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x224D4", 4], "Output": {"Name": ["B30_D28_F0_0x224D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22C18", 4], "Output": {"Name": ["B30_D28_F0_0x22C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22C1C", 4], "Output": {"Name": ["B30_D28_F0_0x22C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22C20", 4], "Output": {"Name": ["B30_D28_F0_0x22C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22C24", 4], "Output": {"Name": ["B30_D28_F0_0x22C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x22C50", 4], "Output": {"Name": ["B30_D28_F0_0x22C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x23430", 8], "Output": {"Name": ["B30_D28_F0_0x23430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x23460", 4], "Output": {"Name": ["B30_D28_F0_0x23460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x24150", 4], "Output": {"Name": ["B30_D28_F0_0x24150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x24968", 4], "Output": {"Name": ["B30_D28_F0_0x24968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x258C4", 4], "Output": {"Name": ["B30_D28_F0_0x258C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26430", 4], "Output": {"Name": ["B30_D28_F0_0x26430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x264C8", 4], "Output": {"Name": ["B30_D28_F0_0x264C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x264D4", 4], "Output": {"Name": ["B30_D28_F0_0x264D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26C18", 4], "Output": {"Name": ["B30_D28_F0_0x26C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26C1C", 4], "Output": {"Name": ["B30_D28_F0_0x26C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26C20", 4], "Output": {"Name": ["B30_D28_F0_0x26C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26C24", 4], "Output": {"Name": ["B30_D28_F0_0x26C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x26C50", 4], "Output": {"Name": ["B30_D28_F0_0x26C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x27430", 8], "Output": {"Name": ["B30_D28_F0_0x27430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x27460", 4], "Output": {"Name": ["B30_D28_F0_0x27460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x2290", 8], "Output": {"Name": ["B30_D29_F0_0x2290"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22A0", 8], "Output": {"Name": ["B30_D29_F0_0x22A0"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x20150", 4], "Output": {"Name": ["B30_D29_F0_0x20150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x20968", 4], "Output": {"Name": ["B30_D29_F0_0x20968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x218C4", 4], "Output": {"Name": ["B30_D29_F0_0x218C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22408", 4], "Output": {"Name": ["B30_D29_F0_0x22408"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22430", 4], "Output": {"Name": ["B30_D29_F0_0x22430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x224C8", 4], "Output": {"Name": ["B30_D29_F0_0x224C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x224D4", 4], "Output": {"Name": ["B30_D29_F0_0x224D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22C18", 4], "Output": {"Name": ["B30_D29_F0_0x22C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22C1C", 4], "Output": {"Name": ["B30_D29_F0_0x22C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22C20", 4], "Output": {"Name": ["B30_D29_F0_0x22C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22C24", 4], "Output": {"Name": ["B30_D29_F0_0x22C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x22C50", 4], "Output": {"Name": ["B30_D29_F0_0x22C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x23430", 8], "Output": {"Name": ["B30_D29_F0_0x23430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x23460", 4], "Output": {"Name": ["B30_D29_F0_0x23460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x24150", 4], "Output": {"Name": ["B30_D29_F0_0x24150"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x24968", 4], "Output": {"Name": ["B30_D29_F0_0x24968"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x258C4", 4], "Output": {"Name": ["B30_D29_F0_0x258C4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26430", 4], "Output": {"Name": ["B30_D29_F0_0x26430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x264C8", 4], "Output": {"Name": ["B30_D29_F0_0x264C8"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x264D4", 4], "Output": {"Name": ["B30_D29_F0_0x264D4"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26C18", 4], "Output": {"Name": ["B30_D29_F0_0x26C18"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26C1C", 4], "Output": {"Name": ["B30_D29_F0_0x26C1C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26C20", 4], "Output": {"Name": ["B30_D29_F0_0x26C20"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26C24", 4], "Output": {"Name": ["B30_D29_F0_0x26C24"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x26C50", 4], "Output": {"Name": ["B30_D29_F0_0x26C50"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x27430", 8], "Output": {"Name": ["B30_D29_F0_0x27430"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x27460", 4], "Output": {"Name": ["B30_D29_F0_0x27460"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x2298", 8], "Output": {"Name": ["B30_D26_F0_0x2298"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x2298", 8], "Output": {"Name": ["B30_D27_F0_0x2298"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x2298", 8], "Output": {"Name": ["B30_D28_F0_0x2298"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x2298", 8], "Output": {"Name": ["B30_D29_F0_0x2298"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x2080C", 4], "Output": {"Name": ["B30_D26_F0_0x2080C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 26, 0, 0, 6, "0x2480C", 4], "Output": {"Name": ["B30_D26_F0_0x2480C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x2080C", 4], "Output": {"Name": ["B30_D27_F0_0x2080C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 27, 0, 0, 6, "0x2480C", 4], "Output": {"Name": ["B30_D27_F0_0x2480C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x2080C", 4], "Output": {"Name": ["B30_D28_F0_0x2080C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 28, 0, 0, 6, "0x2480C", 4], "Output": {"Name": ["B30_D28_F0_0x2480C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x2080C", 4], "Output": {"Name": ["B30_D29_F0_0x2080C"]}},
+              {"Params": ["Target", 0, "PostEnumBus", 29, 0, 0, 6, "0x2480C", 4], "Output": {"Name": ["B30_D29_F0_0x2480C"]}}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "Uncore_RdIAMSR": {
+        "RecordEnable": true,
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 15,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdIAMSR": [
+                {"Params": ["Target", 0, "0x194"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x194"]}},
+                {"Params": ["Target", 0, "0x1ad"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x1AD"]}},
+                {"Params": ["Target", 0, "0x1ae"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x1AE"]}},
+                {"Params": ["Target", 0, "0x1b1"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x1B1"]}},
+                {"Params": ["Target", 0, "0x1b2"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x1B2"]}},
+                {"Params": ["Target", 0, "0x3f8"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x3F8"]}},
+                {"Params": ["Target", 0, "0x3f9"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x3F9"]}},
+                {"Params": ["Target", 0, "0x3fa"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x3FA"]}},
+                {"Params": ["Target", 0, "0x419"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x419"]}},
+                {"Params": ["Target", 0, "0x60a"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x60A"]}},
+                {"Params": ["Target", 0, "0x60b"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x60B"]}},
+                {"Params": ["Target", 0, "0x60c"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x60C"]}},
+                {"Params": ["Target", 0, "0x60d"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x60D"]}},
+                {"Params": ["Target", 0, "0x610"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x610"]}},
+                {"Params": ["Target", 0, "0x611"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x611"]}},
+                {"Params": ["Target", 0, "0x614"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x614"]}},
+                {"Params": ["Target", 0, "0x618"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x618"]}},
+                {"Params": ["Target", 0, "0x61b"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x61B"]}},
+                {"Params": ["Target", 0, "0x620"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x620"]}},
+                {"Params": ["Target", 0, "0x621"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x621"]}},
+                {"Params": ["Target", 0, "0x638"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x638"]}},
+                {"Params": ["Target", 0, "0x639"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x639"]}},
+                {"Params": ["Target", 0, "0x648"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x648"]}},
+                {"Params": ["Target", 0, "0x649"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x649"]}},
+                {"Params": ["Target", 0, "0x64a"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x64A"]}},
+                {"Params": ["Target", 0, "0x64b"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x64B"]}},
+                {"Params": ["Target", 0, "0x64d"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x64D"]}},
+                {"Params": ["Target", 0, "0x64f"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x64F"]}},
+                {"Params": ["Target", 0, "0x6b1"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x6B1"]}},
+                {"Params": ["Target", 0, "0x700"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x700"]}},
+                {"Params": ["Target", 0, "0x770"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x770"]}},
+                {"Params": ["Target", 0, "0x771"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x771"]}},
+                {"Params": ["Target", 0, "0x772"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x772"]}},
+                {"Params": ["Target", 0, "0x775"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x775"]}},
+                {"Params": ["Target", 0, "0x921"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x921"]}},
+                {"Params": ["Target", 0, "0x950"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x950"]}},
+                {"Params": ["Target", 0, "0xa00"], "Output": {"Size": 4,"Name": ["RDIAMSR_0xA00"]}},
+                {"Params": ["Target", 0, "0xa01"], "Output": {"Size": 4,"Name": ["RDIAMSR_0xA01"]}},
+                {"Params": ["Target", 0, "0x8101"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8101"]}},
+                {"Params": ["Target", 0, "0x8102"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8102"]}},
+                {"Params": ["Target", 0, "0x8103"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8103"]}},
+                {"Params": ["Target", 0, "0x8104"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x8104"]}},
+                {"Params": ["Target", 0, "0x8105"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8105"]}},
+                {"Params": ["Target", 0, "0x8106"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8106"]}},
+                {"Params": ["Target", 0, "0x8107"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8107"]}},
+                {"Params": ["Target", 0, "0x8108"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8108"]}},
+                {"Params": ["Target", 0, "0x8109"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x8109"]}},
+                {"Params": ["Target", 0, "0x810a"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x810A"]}},
+                {"Params": ["Target", 0, "0x810b"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x810B"]}},
+                {"Params": ["Target", 0, "0x810c"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x810C"]}},
+                {"Params": ["Target", 0, "0x810d"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x810D"]}},
+                {"Params": ["Target", 0, "0x810e"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x810E"]}},
+                {"Params": ["Target", 0, "0x810f"], "Output": {"Size": 4,"Name": ["RDIAMSR_0x810F"]}}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "Uncore_RdIAMSR_CHA": {
+        "RecordEnable": false
+      }
+    },
+    {
+      "TOR": {
+        "RecordEnable": false,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/TOR"
+      }
+    },
+    {
+      "PowerManagement_PCI": {
+        "RecordEnable": false,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/PM_info"
+      }
+    },
+    {
+      "PowerManagement_PCI_core": {
+        "RecordEnable": false
+      }
+    },
+    {
+      "PowerManagement_Pll": {
+        "RecordEnable": false
+      }
+    },
+    {
+      "Address_Map": {
+        "RecordEnable": false,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/address_map"
+      }
+    },
+    {
+      "BigCore" : {
+        "RecordEnable": false,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/big_core"
+      }
+    },
+    {
+      "MCA_CORE": {
+        "RecordEnable": false
+      }
+    },
+    {
+      "Metadata_Cpu_Late": {
+        "RecordEnable": true,
+        "RecordType": "0x0b",
+        "ProductType": "0x1a",
+        "Revision": "0x01",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 10,
+        "RootAtLevel": 3,
+        "OutputPath": "crash_data/METADATA/cpu%d",
+        "PreReq": {
+          "PECICmds": [
+          ]
+        },
+        "PECICmds": [
+          {
+            "RdGlobalVars": [
+              {"Params": ["crashcorecount"], "Output": {"Name": ["crashcore_count"]}},
+              {"Params": ["crashcoremask"], "Output": {"Name": ["crashcore_mask"]}}
+            ]
+          },
+          {
+            "RdEndpointConfigPCILocal": [
+              {"Params": ["Target", 0, 14, 30, 2, "0xEC", 4], "Output": {"Name": ["final_mca_err_src_log"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

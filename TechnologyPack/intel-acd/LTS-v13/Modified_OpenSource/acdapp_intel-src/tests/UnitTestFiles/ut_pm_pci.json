@@ -1,0 +1,57 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "PowerManagement_PCI": {
+        "RecordEnable": true,
+        "RecordType": "0x0c",
+        "ProductType": "0x1c",
+        "Revision": "0x01",
+        "SkipOnFail": true,
+        "LoopOnCpu": true,
+        "MaxTimeSec": 1,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/PM_info/",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdPkgConfig": [
+              {"Params": ["Target", 88, "0x001", 4],"Output": {"Name": ["pm_0x001"]}},
+              {"Params": ["Target", 88, "0x002", 4],"Output": {"Name": ["pm_0x002"]}},
+              {"Params": ["Target", 88, "0x003", 4],"Output": {"Name": ["pm_0x003"]}},
+              {"Params": ["Target", 88, "0x007", 4],"Output": {"Name": ["pm_0x007"]}},
+              {"Params": ["Target", 88, "0x008", 4],"Output": {"Name": ["pm_0x008"]}},
+              {"Params": ["Target", 88, "0x009", 4],"Output": {"Name": ["pm_0x009"]}},
+              {"Params": ["Target", 88, "0x00a", 4],"Output": {"Name": ["pm_0x00a"]}},
+              {"Params": ["Target", 88, "0x101", 4],"Output": {"Name": ["pm_0x101"]}},
+              {"Params": ["Target", 88, "0x102", 4],"Output": {"Name": ["pm_0x102"]}},
+              {"Params": ["Target", 88, "0x107", 4],"Output": {"Name": ["pm_0x107"]}},
+              {"Params": ["Target", 88, "0x201", 4],"Output": {"Name": ["pm_0x201"]}},
+              {"Params": ["Target", 88, "0x202", 4],"Output": {"Name": ["pm_0x202"]}},
+              {"Params": ["Target", 88, "0x207", 4],"Output": {"Name": ["pm_0x207"]}},
+              {"Params": ["Target", 88, "0x307", 4],"Output": {"Name": ["pm_0x307"]}},
+              {"Params": ["Target", 88, "0x407", 4],"Output": {"Name": ["pm_0x407"]}},
+              {"Params": ["Target", 88, "0x507", 4],"Output": {"Name": ["pm_0x507"]}},
+              {"Params": ["Target", 88, "0x607", 4],"Output": {"Name": ["pm_0x607"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

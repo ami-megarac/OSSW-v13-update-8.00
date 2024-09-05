@@ -1,0 +1,1 @@
+auth       sufficient   /lib/security/pam_custom_google.so secret=/conf/google_otp/${CHANNEL}/${USER}/.google_authenticator allowed_perm=0777 nullok no_strict_owner

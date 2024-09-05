@@ -1,0 +1,87 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "crashlog": {
+        "RecordEnable": true,
+        "RecordType": "0x24",
+        "ProductType": "0x1c",
+        "Revision": "0x01",
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/crashlog/",
+        "PreReq": {
+          "PECICmds": [
+            {
+              "Telemetry_Discovery" : [
+                {
+                  "Params" : ["Target", 0, 0, 0, 0, 1],
+                  "InternalVar": "IsEnable",
+                  "Comment" :"Check and return if crashlog is enabled"
+                }, {
+                  "Params" : ["Target", 1, 4, 0, 0, 2],
+                  "InternalVar": "NumAgents",
+                  "Comment" : "Get number of supported crashlog agents"
+                }
+              ]
+            }
+          ]
+        },
+        "PECICmds": [
+          {
+            "LogCrashlog": [
+              {"Params": ["IsEnable", "NumAgents"]}
+            ]
+          }
+        ],
+        "Agent" : {
+          "0x84ba0b36" : {
+            "Name" : "PCODE_CRASH_INDEX",
+            "Enabled" : true
+          },
+          "0x9956f43f" : {
+            "Name" : "PUNIT_CRASH_INDEX",
+            "Enabled" : true
+          },
+          "0xd5323b09" : {
+            "Name" : "OOBMSM_CRASH_INDEX",
+            "Enabled" : true
+          },
+          "0xf26d1478" : {
+            "Name" : "TOR_CRASH_INDEX",
+            "Enabled" : true
+          },
+          "0x258e3c90" : {
+            "Name" : "PMC_CRASH_INDEX",
+            "Enabled" : true
+          },
+          "0x8899069f" : {
+            "Name" : "PMC_RESET_INDEX",
+            "Enabled" : true
+          },
+          "0x284b9c1f" : {
+            "Name" : "PMC_TRACE_INDEX",
+            "Enabled" : true
+          },
+          "0x57c9bf20" : {
+            "Name" : "SUSRAM_INDEX",
+            "Enabled" : true
+          }
+        },
+        "ExcludeAgentIDs" : []
+      }
+    }
+  ]
+}

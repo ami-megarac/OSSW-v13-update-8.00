@@ -1,0 +1,51 @@
+--- uboot.orig/oem/ami/fwupdate/fwupdate.c	2022-11-02 19:17:59.015181713 +0530
++++ uboot/oem/ami/fwupdate/fwupdate.c	2022-11-02 19:31:31.553414619 +0530
+@@ -418,6 +418,7 @@
+ int TFTPRecoveryBoot(void)
+ {
+     char    *s, tmp[22] = {0};
++    int ret = 0;
+ 
+     /*Set the netrety to "no", so that NetLoop will comeout after TFTP retry exceeds.*/
+     s = env_get("netretry");
+@@ -425,12 +426,22 @@
+     env_save();
+ 
+     /*Run the DHCP command to get the IP Address, SubNetmask and Gateway*/
+-    net_loop(DHCP);
++    ret = net_loop(DHCP);
++    if (ret < 0) 
++    {
++       	printf("Error: %s DHCP fails %d\n",__FUNCTION__,ret);
++       	return -1;
++    }
+ 	
+ 	if(!(net_gateway.s_addr))
+ 	{
+ 		env_set("ethact","ethernet@1e680000");
+-		 net_loop(DHCP);
++		 ret = net_loop(DHCP);
++                 if (ret < 0) 
++		 {
++			 printf("Error: %s DHCP fails %d\n",__FUNCTION__,ret);
++			 return -1;
++		 }
+ 	}
+ 
+     /*Update the Gateway U-Boot Env*/
+@@ -458,8 +469,13 @@
+     env_save();
+ 
+     /*Call the Network loop to load the file from remote machine*/
+-    net_loop(RECOVERY);
+-
++   ret =  net_loop(RECOVERY);
++   if(ret<0)
++   {
++	   printf("Error: %s RECOVERY fails %d\n",__FUNCTION__,ret);
++	   return -1;
++   }
++ 
+     /*Restore the net retry value*/
+     env_set("netretry",s);
+     env_save();

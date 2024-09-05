@@ -1,0 +1,44 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "MCA_CBO": {
+        "RecordEnable": true,
+        "SkipOnFail": true,
+        "LoopOnCHA": true,
+        "MaxTimeSec": 30,
+        "RootAtLevel": 4,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/MCA/uncore/CBO%d",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdIAMSR": [
+              {"Params": ["Target", "CHA", "0x8002"],"Output": {"Size": 8, "Name":["cbo%d_status"]}},
+              {"Params": ["Target", "CHA", "0x8003"],"Output": {"Size": 8, "Name":["cbo%d_addr"]}},
+              {"Params": ["Target", "CHA", "0x8004"],"Output": {"Size": 8, "Name":["cbo%d_misc"]}},
+              {"Params": ["Target", "CHA", "0x8005"],"Output": {"Size": 8, "Name":["cbo%d_misc3"]}},
+              {"Params": ["Target", "CHA", "0x8001"],"Output": {"Size": 8, "Name":["cbo%d_ctl"]}},
+              {"Params": ["Target", "CHA", "0x8000"],"Output": {"Size": 8, "Name":["cbo%d_misc4"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

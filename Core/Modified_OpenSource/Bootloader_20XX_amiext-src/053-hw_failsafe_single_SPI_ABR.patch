@@ -1,0 +1,317 @@
+--- uboot.orig/arch/arm/mach-aspeed/ast2600/board_common.c	2022-03-22 19:06:33.397711420 +0530
++++ uboot/arch/arm/mach-aspeed/ast2600/board_common.c	2022-03-22 19:02:37.300763441 +0530
+@@ -90,7 +90,11 @@
+ 	// Hardware Strap 2, set decode 0x4E 
+ 	*(volatile u32 *)(0x1e6e2000) = 0x1688A8A8;
+ #ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT
+-        *((volatile u32 *)(0x1e6e2000 + 0x510)) &= ~(1 << 12 );//dual spi ABR mode
++	#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++		*((volatile u32 *)(0x1e6e2000 + 0x510)) |= (1 << 12 );//single spi ABR mode
++	#else
++        	*((volatile u32 *)(0x1e6e2000 + 0x510)) &= ~(1 << 12 );//dual spi ABR mode
++	#endif
+         *((volatile u32 *)(0x1e6e2000 + 0x510)) |= 0x800;//enable ABR mode
+ 	*((volatile u32 *)(0x1E620000 + 0x64)) |= 0x01;//enable FMC WDT
+ 	*((volatile u32 *)(0x1E620000 + 0x68)) = 0x597d0;//10 min WDT time out
+--- uboot.orig/arch/arm/mach-aspeed/ast2600/scu_info.c	2022-03-22 19:06:33.401711371 +0530
++++ uboot/arch/arm/mach-aspeed/ast2600/scu_info.c	2022-03-22 19:03:05.680382821 +0530
+@@ -296,7 +296,7 @@
+ 			printf(", Source: %s", \
+ 					readl(ASPEED_FMC_WDT2) & BIT(4) ? "Alternate" : "Primary");
+ 
+-			if (readl(ASPEED_HW_STRAP2) & GENMASK(15, 13))
++			if ((readl(ASPEED_HW_STRAP2) & GENMASK(15, 13)) || (readl(ASPEED_HW_STRAP2) & GENMASK(15, 14)))
+ 				printf(", bspi_size: %ld MB", \
+ 					BIT((readl(ASPEED_HW_STRAP2) >> 13) & 0x7));
+ 
+--- uboot.orig/env/sf.c	2022-03-22 19:06:36.805669127 +0530
++++ uboot/env/sf.c	2022-04-06 15:16:00.141752409 +0530
+@@ -34,7 +34,7 @@
+ #endif /* CONFIG_ENV_OFFSET_REDUND */
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT 
++#if defined (CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT) && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ unsigned char broken_spi_banks = 0;// specify the number of broken SPI flash bank
+ #endif
+ static struct spi_flash *env_flash;
+@@ -45,7 +45,7 @@
+ 	struct udevice *new;
+ 	int	ret;
+ 
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT 
++#if defined (CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT) && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ 	unsigned int cs;
+ 	struct spi_flash *flash=NULL;
+     	for(cs=2;cs>0;cs--){
+@@ -210,11 +210,24 @@
+ 	char	*saved_buffer = NULL;
+ 	int	ret = 1;
+ 	env_t	env_new;
++	
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++        unsigned long abr_indicator = 0;
++        unsigned long int start_address = 0;
++        #define BOOT_SRC_INDICATOR    0x10
++        #define FMC_WDT2_REG             0x1e620000+0x64
++
++        abr_indicator = *((volatile unsigned long *)(FMC_WDT2_REG));
++#endif
++
+ 
+ 	ret = setup_flash_device();
+ 	if (ret)
+ 		return ret;
+ 
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR 
++	start_address = ((env_flash->size)/ 2);
++#endif
+ 	/* Is the sector larger than the env (i.e. embedded) */
+ 	if (CONFIG_ENV_SECT_SIZE > CONFIG_ENV_SIZE) {
+ 		saved_size = CONFIG_ENV_SECT_SIZE - CONFIG_ENV_SIZE;
+@@ -223,8 +236,22 @@
+ 		if (!saved_buffer)
+ 			goto done;
+ 
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++	
++	if (abr_indicator & BOOT_SRC_INDICATOR) /*Check 4th bit to identify boot flash source indicator*/
++        {
++                ret = spi_flash_read(env_flash,
++                                 start_address + saved_offset, saved_size, saved_buffer);
++        }
++        else
++        {
+ 		ret = spi_flash_read(env_flash, saved_offset,
+ 			saved_size, saved_buffer);
++        }
++#else
++		ret = spi_flash_read(env_flash, saved_offset,
++			saved_size, saved_buffer);
++#endif
+ 		if (ret)
+ 			goto done;
+ 	}
+@@ -236,20 +263,59 @@
+ 	sector = DIV_ROUND_UP(CONFIG_ENV_SIZE, CONFIG_ENV_SECT_SIZE);
+ 
+ 	puts("Erasing SPI flash...");
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++        if (abr_indicator & BOOT_SRC_INDICATOR) /*Check 4th bit to identify boot flash source indicator*/
++        {
++		ret = spi_flash_erase(env_flash, start_address + CONFIG_ENV_OFFSET,
++                		sector * CONFIG_ENV_SECT_SIZE);
++        }
++        else
++        {
++		ret = spi_flash_erase(env_flash, CONFIG_ENV_OFFSET,
++	                sector * CONFIG_ENV_SECT_SIZE);
++        }
++#else
+ 	ret = spi_flash_erase(env_flash, CONFIG_ENV_OFFSET,
+ 		sector * CONFIG_ENV_SECT_SIZE);
++#endif
+ 	if (ret)
+ 		goto done;
+ 
+ 	puts("Writing to SPI flash...");
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++        if (abr_indicator & BOOT_SRC_INDICATOR) /*Check 4th bit to identify boot flash source indicator*/
++        {
++                ret = spi_flash_write(env_flash, start_address + CONFIG_ENV_OFFSET,
++	                CONFIG_ENV_SIZE, &env_new);
++        }
++        else
++        { 
++                ret = spi_flash_write(env_flash, CONFIG_ENV_OFFSET,
++                	CONFIG_ENV_SIZE, &env_new);
++        }
++#else
+ 	ret = spi_flash_write(env_flash, CONFIG_ENV_OFFSET,
+ 		CONFIG_ENV_SIZE, &env_new);
++#endif
+ 	if (ret)
+ 		goto done;
+ 
+ 	if (CONFIG_ENV_SECT_SIZE > CONFIG_ENV_SIZE) {
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++		if (abr_indicator & BOOT_SRC_INDICATOR)
++		{
++			ret = spi_flash_write(env_flash, start_address + saved_offset,
++ 	                       saved_size, saved_buffer);
++		}
++		else
++		{
++			ret = spi_flash_write(env_flash, saved_offset,
++				saved_size, saved_buffer);
++		}
++#else
+ 		ret = spi_flash_write(env_flash, saved_offset,
+ 			saved_size, saved_buffer);
++#endif
+ 		if (ret)
+ 			goto done;
+ 	}
+--- uboot.orig/oem/ami/fmh/ast_wdt.c	2022-03-22 19:06:37.869655918 +0530
++++ uboot/oem/ami/fmh/ast_wdt.c	2022-04-06 15:13:11.892315875 +0530
+@@ -28,7 +28,7 @@
+ #define WDT_CUR_BOOTSRC_MASK    0x10
+ #define FMC_WDT2_REG		 0x1e620000+0x64
+ 
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT 
++#if defined (CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT) && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ extern unsigned char broken_spi_banks;// specify the number of broken SPI flash bank
+ #endif
+ 
+@@ -59,10 +59,13 @@
+ #ifdef CONFIG_SPX_FEATURE_GLOBAL_DUAL_IMAGE_SUPPORT
+        /*clear boot source to restore address mapping... */
+ #ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK 
+ 		if ((broken_spi_banks == 2) && (*wdt_timeout_status & WDT_CUR_BOOTSRC_MASK))
+ 			broken_spi_banks = 1;
+ 		else if (broken_spi_banks == 0)
++#endif
+        {
++	       /*Clear boot source flag is common for single and dual ABR*/
+ 	       *((volatile unsigned long *)(FMC_WDT2_REG)) |= WDT2_SECOND_BOOT_CODE;//clear boot src
+        }
+ #endif
+@@ -78,7 +81,7 @@
+        /* Also set the Flag to reset the CPU on Timeout */
+        *((volatile unsigned long *)(WDT2_CONTROL_REG)) |= (WDT_RESET_SYSTEM | WDT_ENABLE);
+ #endif       
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT 
++#if defined(CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT) && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ 	if (broken_spi_banks == 1) 
+            return 1;// if bank#0 is broken then dont clear address mapping and bootimage 1 
+        else 
+@@ -106,9 +109,11 @@
+ 		printf("Disabling FMC Watchdog 2 Timer\n");
+ 		*((volatile unsigned long *)(FMC_WDT2_REG)) &= ~(0x1);
+ 	}
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
+ 	if ((broken_spi_banks == 2) && (*((volatile unsigned long *)(FMC_WDT2_REG)) & WDT_CUR_BOOTSRC_MASK))
+ 		broken_spi_banks = 1;
+ #endif
++#endif
+     return 0;
+ }
+ 
+--- uboot.orig/oem/ami/fmh/cmd_fmh.c	2022-03-22 19:06:37.865655969 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2022-04-06 15:13:54.775659616 +0530
+@@ -70,7 +70,10 @@
+         #define CE1_ADDRESS_SEGMENT 0x28000000
+         struct spi_flash *flashspi[CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS]={NULL};
+ #endif
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT
++#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++	#define CE0_START_ADDRESS 0x20000000
++#endif
++#if defined(CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT) && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ extern unsigned char broken_spi_banks; // specify the number of broken SPI flash bank
+ #endif
+ 
+@@ -751,7 +754,7 @@
+               return -1;
+ 	      break;
+       }
+-
++#ifndef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
+       if(failsafeboot)
+       {
+ 	 if(*imagetoboot == IMAGE_1)
+@@ -777,6 +780,7 @@
+ 	 *((volatile unsigned long *)(WDT2_CLR_TIMEOUT_STAT_REG)) = WDT_CLR_EVT_COUNTER;
+ #endif
+       }
++#endif
+ 
+ return 0;
+ }
+@@ -844,6 +848,9 @@
+     Enable_watchdog(&watchdog_reset_status);
+ #else
+     *imagetoboot=Enable_watchdog(&watchdog_reset_status);
++    #ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
++    	return 0;
++    #endif
+ #endif
+ #endif
+ 
+@@ -858,7 +865,7 @@
+             printf("\nspi_flash_probe failed for cS=%d\n",cs);
+             continue;
+         }
+-#ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT
++#if defined (CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT)  && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+         /* Boot from first bank when alternative boot occurs
+         * therefore determine bank 1 is broken or not.
+         */
+@@ -1291,11 +1298,15 @@
+ 
+     if(imagetoboot == IMAGE_1)
+     {
+-#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+         flash = flashspi[0];
+         SectorCount = (CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE/SectorSize);
+         StartingSector = 0;
+         startaddress=0;
++#elif defined (CONFIG_SPX_FEATURE_SINGLE_SPI_ABR)
++	SectorCount = ((flash->size/2)/SectorSize);
++	StartingSector = 0;
++	startaddress=0;
+ #else
+         SectorCount = (CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE/SectorSize);
+         StartingSector = 0;
+@@ -1305,13 +1316,17 @@
+     }
+     else//for image2
+     {
+-#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+ 	flash = flashspi[1];
+ 	StartingSector = CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
+ 	SectorCount=StartingSector+CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE;
+ 	startaddress=CE1_ADDRESS_SEGMENT;
+ 	StartingSector/=SectorSize;
+ 	SectorCount/=SectorSize;
++#elif defined(CONFIG_SPX_FEATURE_SINGLE_SPI_ABR)
++	StartingSector = ((flash->size/2)/SectorSize);
++	SectorCount = (flash->size/SectorSize);
++	startaddress=CE0_START_ADDRESS+(flash->size/2);
+ #else
+ 
+         StartingSector = (CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE/SectorSize);
+--- uboot.orig/oem/ami/fmh/fmhcore.c	2022-03-22 19:06:37.869655918 +0530
++++ uboot/oem/ami/fmh/fmhcore.c	2022-03-22 19:01:04.953999385 +0530
+@@ -185,7 +185,7 @@
+ 	//unsigned long StartAddr = (unsigned long)SectorAddr;
+ 	//unsigned long SecStartAddr = 0;
+ 	//unsigned long i = 0;
+-#elif defined CONFIG_SPX_FEATURE_CONTIGIOUS_SPI_MEMORY
++#elif defined CONFIG_SPX_FEATURE_CONTIGIOUS_SPI_MEMORY || defined CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
+ 	MODULE_INFO *mod;
+ 	unsigned long StartAddr = (unsigned long)SectorAddr;
+ #endif
+@@ -224,7 +224,18 @@
+     	if(ret)
+     	{
+ 		puts("Error in reading SPI\n");
+-    	}	
++    	}
++#elif defined(CONFIG_SPX_FEATURE_SINGLE_SPI_ABR)	
++	mod = &(fmh->Module_Info);
++        if ((StartAddr - le32_to_host(mod->Module_Location)) >= (flash->size/2))
++        {
++                ret=spi_flash_read(flash,le32_to_host(mod->Module_Location)+(flash->size/2)+FMH_Offset, sizeof(FMH), (void *)&fmh_buffer);
++                if(ret)
++                {
++                        puts("Error in reading SPI\n");
++                }
++        }
++	else
+ #elif defined CONFIG_SPX_FEATURE_CONTIGIOUS_SPI_MEMORY
+ 	mod = &(fmh->Module_Info);
+         if ((StartAddr - le32_to_host(mod->Module_Location)) >= CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE)

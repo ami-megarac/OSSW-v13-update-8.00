@@ -1,0 +1,18 @@
+--- uboot/arch/arm/mach-aspeed/ast2600/crypto.c	2020-11-20 04:00:27.000000000 -0500
++++ uboot/arch/arm/mach-aspeed/ast2600/crypto.c	2023-08-10 19:59:19.000000000 -0400
+@@ -86,6 +86,7 @@
+ 	return ast_hace_wait_isr(ASPEED_HACE_STS, HACE_HASH_ISR, 100000);
+ }
+ 
++#if 0 /*unused function */
+ int aes256ctr_decrypt_object(u8 *src, u8 *dst, u32 length, u8 *context)
+ {
+ 	writel((u32)src, ASPEED_HACE_SRC);
+@@ -96,6 +97,7 @@
+ 
+ 	return ast_hace_wait_isr(ASPEED_HACE_STS, HACE_CRYPTO_ISR, 100000);
+ }
++#endif
+ 
+ int rsa_alg(u8 *data, int data_bytes, u8 *m, int m_bits, u8 *e, int e_bits, u8 *dst, void *contex_buf)
+ {

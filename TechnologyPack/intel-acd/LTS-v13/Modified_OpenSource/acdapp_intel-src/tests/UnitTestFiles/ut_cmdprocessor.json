@@ -1,0 +1,140 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndPointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "Testing": {
+        "RecordEnable": true,
+        "RecordType": "0x08",
+        "ProductType": "0x1c",
+        "Revision": "0x26",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "testing",
+        "PreReq": {
+          "PECICmds": [
+          ]
+        },
+        "PECICmds": [
+          {
+            "CrashDump_Discovery": [
+              {"Params": ["Target", 0, 0, 0, 0, 0],"Output": {"Name": ["CrashDump_Discovery"]}}
+            ]
+          },
+          {
+            "CrashDump_GetFrame": [
+              {"Params": ["Target", 0, 0, 0, 0],"Output": {"Name": ["CrashDump_GetFrame"]}}
+            ]
+          },
+          {
+            "Ping": [
+              {"Params": ["Target"],"Output": {"Name": ["Ping"]}}
+            ]
+          },
+          {
+            "GetCPUID": [
+              {"Params": ["Target"],"Output": {"Name": ["GetCPUID"]}}
+            ]
+          },
+          {
+            "RdIAMSR": [
+              {"Params": ["Target", 0, 0],"Output": {"Name": ["RdIAMSR"]}}
+            ]
+          },
+          {
+            "RdPkgConfig": [
+              {"Params": ["Target", 0, 0],"Output": {"Name": ["RdPkgConfig"]}}
+            ]
+          },
+          {
+            "RdPkgConfigCore": [
+              {"Params": ["Target", 0, 0, 0, 0],"Output": {"Name": ["RdPkgConfigCore"]}}
+            ]
+          },
+          {
+            "RdPCIConfigLocal": [
+              {"Params": ["Target", 0, 0, 0, 0, 2],"Output": {"Name": ["RdPCIConfigLocal2"]}},
+              {"Params": ["Target", 0, 0, 0, 0, 8],"Output": {"Name": ["RdPCIConfigLocal8"]}}
+            ]
+          },
+          {
+            "RdEndpointConfigPCILocal": [
+              {"Params": ["Target", 0, 0, 0, 0, 0, 0],"Output": {"Name": ["RdEndPointConfigPciLocal"]}}
+            ]
+          },
+          {
+            "WrEndPointConfigPciLocal": [
+              {"Params": ["Target", 0, 0, 0, 0, 0, 0, 0],"Output": {"Name": ["WrEndPointConfigPciLocal"]}}
+            ]
+          },
+          {
+            "RdEndpointConfigMMIO": [
+              {"Params": ["Target", 0, 0, 0, 0, 0, 0, 0, 0],"Output": {"Name": ["RdEndPointConfigMmio"]}}
+            ]
+          },
+          {
+            "RdPostEnumBus": [
+              {"Params": ["Target", 0, 0, 0],"Output": {"Name": ["RdPostEnumBus"]}}
+            ]
+          },
+          {
+            "RdChaCount": [
+              {"Params": [1, 1],"Output": {"Name": ["RdChaCount"]}}
+            ]
+          },
+          {
+            "Telemetry_Discovery": [
+              {"Params": ["Target", 0, 0, 0, 0, 0],"Output": {"Name": ["Telemetry_Discovery"]}}
+            ]
+          },
+          {
+            "LogBigCore": [
+              {"Params": [],"Output": {"Name": ["LogBigCore"]}}
+            ]
+          },
+          {
+            "RdAndConcatenate": [
+              {"Params": [0,0],"Output": {"Name": ["RdAndConcatenate"]}}
+            ]
+          },
+          {
+            "RdGlobalVars": [
+              {"Params": ["peci_addr"], "Output": {"Name": ["peci_id"]}},
+              {"Params": ["cpuid"], "Output": {"Name": ["cpuid"]}},
+              {"Params": ["cpuid_source"], "Output": {"Name": ["_cpuid_source"]}},
+              {"Params": ["coremask_source"], "Output": {"Name": ["_core_mask_source"]}},
+              {"Params": ["chacount_source"], "Output": {"Name": ["_cha_count_source"]}},
+              {"Params": ["coremask"], "Output": {"Name": ["core_mask"]}},
+              {"Params": ["chacount"], "Output": {"Name": ["cha_count"]}},
+              {"Params": ["corecount"], "Output": {"Name": ["core_count"]}}
+            ]
+          },
+          {
+            "SaveStrVars": [
+              {"Params": [0,0],"Output": {"Name": ["SaveStrVars"]}}
+            ]
+          },
+          {
+            "LogTor": [
+              {"Params": [0,0],"Output": {"Name": ["LogBigCore"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

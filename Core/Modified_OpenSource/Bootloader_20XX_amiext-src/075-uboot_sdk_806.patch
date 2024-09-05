@@ -1,0 +1,160 @@
+diff -Nuar a/cmd/otp.c b/cmd/otp.c
+--- a/cmd/otp.c	2023-09-29 17:03:33.753889257 +0530
++++ b/cmd/otp.c	2023-09-29 15:32:30.150661429 +0530
+@@ -2223,7 +2223,7 @@
+ 			return OTP_SUCCESS;
+ 		}
+ 
+-		printf("Program OTPDATA0x%X[0x%X] to 1\n", otp_dw_offset, bit_offset);
++		printf("Program OTPDATA0x%X[0x%X] to %d\n", otp_dw_offset, bit_offset, value);
+ 		break;
+ 	case OTP_REGION_STRAP:
+ 		otp_strap_status(otpstrap);
+diff -Nuar a/drivers/clk/aspeed/clk_ast2600.c b/drivers/clk/aspeed/clk_ast2600.c
+--- a/drivers/clk/aspeed/clk_ast2600.c	2023-09-29 15:31:11.689641726 +0530
++++ b/drivers/clk/aspeed/clk_ast2600.c	2023-09-29 15:33:12.779217218 +0530
+@@ -710,7 +710,7 @@
+ 	}
+ 
+ 	p_cfg->reg.b.bypass = 0;
+-	p_cfg->reg.b.off = 1;
++	p_cfg->reg.b.off = 0;
+ 	p_cfg->reg.b.reset = 1;
+ 
+ 	reg = readl(addr);
+diff -Nuar a/drivers/mtd/spi/spi-nor-core.c b/drivers/mtd/spi/spi-nor-core.c
+--- a/drivers/mtd/spi/spi-nor-core.c	2023-09-29 15:30:40.609239081 +0530
++++ b/drivers/mtd/spi/spi-nor-core.c	2023-09-29 15:34:22.956134625 +0530
+@@ -1217,6 +1217,80 @@
+ #endif
+ 	return ret;
+ }
++#if CONFIG_IS_ENABLED(SPI_FLASH_SFDP_SUPPORT)
++static int sst_read_nvcr(struct spi_nor *nor)
++{
++	int ret;
++	int val;
++
++	ret = nor->read_reg(nor, SPINOR_OP_SST_RDNVCR, (u8 *)&val, 2);
++	if (ret < 0) {
++		dev_err(nor->dev, "SST error %d while reading CR\n", ret);
++		return ret;
++	}
++
++	return val;
++}
++
++static int sst_write_nvcr(struct spi_nor *nor, int val)
++{
++	int ret;
++
++	write_enable(nor);
++
++	nor->cmd_buf[0] = val & 0xff;
++	nor->cmd_buf[1] = (val >> 8) & 0xff;
++
++	ret = nor->write_reg(nor, SPINOR_OP_SST_WRNVCR, nor->cmd_buf, 2);
++	if (ret < 0) {
++		dev_err(nor->dev,
++			"SST error while writing configuration register\n");
++		return -EINVAL;
++	}
++
++	ret = spi_nor_wait_till_ready(nor);
++	if (ret) {
++		dev_err(nor->dev,
++			"SST timeout while writing configuration register\n");
++		return ret;
++	}
++
++	return 0;
++}
++
++static int sst_cr_quad_enable(struct spi_nor *nor)
++{
++	int ret;
++
++	/* Check current Quad Enable bit value. */
++	ret = sst_read_nvcr(nor);
++	if (ret < 0) {
++		dev_dbg(nor->dev, "SST error while reading nonvolatile configuration register\n");
++		return -EINVAL;
++	}
++
++	if ((ret & SPINOR_SST_RST_HOLD_CTRL) == 0)
++		return 0;
++
++	/* Nonvolatile Configuration Register bit 4 */
++	ret &= ~SPINOR_SST_RST_HOLD_CTRL;
++
++	/* Keep the current value of the Status Register. */
++	ret = sst_write_nvcr(nor, ret);
++	if (ret < 0) {
++		dev_err(nor->dev, "SST error while writing nonvolatile configuration register\n");
++		return -EINVAL;
++	}
++
++	ret = sst_read_nvcr(nor);
++	if (ret > 0 && (ret & SPINOR_SST_RST_HOLD_CTRL)) {
++		dev_err(nor->dev, "SST Quad bit not set\n");
++		return -EINVAL;
++	}
++
++	return 0;
++}
++#endif
+ 
+ #ifdef CONFIG_SPI_FLASH_SST
+ static int sst_write_byteprogram(struct spi_nor *nor, loff_t to, size_t len,
+@@ -2156,6 +2230,8 @@
+ 	/* Quad Enable Requirements. */
+ 	switch (bfpt.dwords[BFPT_DWORD(15)] & BFPT_DWORD15_QER_MASK) {
+ 	case BFPT_DWORD15_QER_NONE:
++		params->quad_enable = sst_cr_quad_enable;
++		break;	
+ 	case BFPT_DWORD15_QER_NONE_111:
+ 		params->quad_enable = NULL;
+ 		break;
+diff -Nuar a/drivers/net/ftgmac100.c b/drivers/net/ftgmac100.c
+--- a/drivers/net/ftgmac100.c	2023-09-29 15:30:12.248872382 +0530
++++ b/drivers/net/ftgmac100.c	2023-09-29 15:34:52.940527421 +0530
+@@ -501,8 +501,7 @@
+ 		return -EPERM;
+ 	}
+ 
+-	debug("%s(%x, %x)\n", __func__, (int)packet, length);
+-
++	debug("%s(%p, %x)\n", __func__, packet, length);
+ 	length = (length < ETH_ZLEN) ? ETH_ZLEN : length;
+ 
+ 	curr_des->txdes3 = (unsigned int)packet;
+diff -Nuar a/drivers/ram/aspeed/sdram_ast2600.c b/drivers/ram/aspeed/sdram_ast2600.c
+--- a/drivers/ram/aspeed/sdram_ast2600.c	2023-09-29 15:29:46.624541675 +0530
++++ b/drivers/ram/aspeed/sdram_ast2600.c	2023-09-29 15:35:11.836775208 +0530
+@@ -929,11 +929,11 @@
+ #ifdef AST2600_SDRAMMC_MANUAL_CLK
+ 	reg = readl(priv->scu + AST_SCU_MPLL);
+ 	reg &= ~(BIT(24) | GENMASK(22, 0));
+-	reg |= (BIT(25) | BIT(23) | SCU_MPLL_FREQ_CFG);
++	reg |= (BIT(25) | SCU_MPLL_FREQ_CFG);
+ 	writel(reg, priv->scu + AST_SCU_MPLL);
+ 	writel(SCU_MPLL_EXT_CFG, priv->scu + AST_SCU_MPLL_EXT);
+ 	udelay(100);
+-	reg &= ~(BIT(25) | BIT(23));
++	reg &= ~BIT(25);	
+ 	writel(reg, priv->scu + AST_SCU_MPLL);
+ 	while (0 == (readl(priv->scu + AST_SCU_MPLL_EXT) & BIT(31)))
+ 		;
+diff -Nuar a/include/linux/mtd/spi-nor.h b/include/linux/mtd/spi-nor.h
+--- a/include/linux/mtd/spi-nor.h	2023-09-29 15:29:20.212201422 +0530
++++ b/include/linux/mtd/spi-nor.h	2023-09-29 15:35:38.525125464 +0530
+@@ -92,6 +92,9 @@
+ #define SPINOR_OP_BP		0x02	/* Byte program */
+ #define SPINOR_OP_WRDI		0x04	/* Write disable */
+ #define SPINOR_OP_AAI_WP	0xad	/* Auto address increment word program */
++#define SPINOR_OP_SST_RDNVCR	0xB5	/* Read nonvolatile configuration register */
++#define SPINOR_OP_SST_WRNVCR	0xB1	/* Write nonvolatile configuration register */
++#define SPINOR_SST_RST_HOLD_CTRL	BIT(4)
+ 
+ /* Used for S3AN flashes only */
+ #define SPINOR_OP_XSE		0x50	/* Sector erase */

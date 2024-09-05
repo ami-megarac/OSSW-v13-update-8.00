@@ -1,0 +1,38 @@
+diff --git a/include/oem/ami/fmh/fmh.h b/include/oem/ami/fmh/fmh.h
+index 00ed4e8a..73e02929 100644
+--- a/include/oem/ami/fmh/fmh.h
++++ b/include/oem/ami/fmh/fmh.h
+@@ -140,9 +140,9 @@ extern int recover_both_spi;
+ FMH* 	ScanforFMH(struct spi_flash *flash,u32 SectorAddr, UINT32 SectorSize);
+ void	CreateFMH(FMH *fmh,UINT32 AllocatedSize, MODULE_INFO *mod);
+ void 	CreateAlternateFMH(ALT_FMH *altfmh,UINT32 FMH_Offset); 
+-#ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
++// #ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
+ FMH* 	ScanforFMH_RAM(unsigned char *SectorAddr, unsigned long SectorSize);
+-#endif
++// #endif
+ 
+ /* CRC32 Related */
+ UINT32 CalculateCRC32(unsigned char *Buffer, UINT32 Size);
+diff --git a/oem/ami/fmh/fmhcore.c b/oem/ami/fmh/fmhcore.c
+index 388c0e07..e1de0edd 100644
+--- a/oem/ami/fmh/fmhcore.c
++++ b/oem/ami/fmh/fmhcore.c
+@@ -93,7 +93,7 @@ CheckForAlternateFMH(ALT_FMH *altfmh)
+ }
+ 
+ 
+-#ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
++// #ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
+ /*
+  * Check For Alternate FMH in RAM
+  */
+@@ -173,7 +173,7 @@ ScanforFMH_RAM(unsigned char *SectorAddr, unsigned long SectorSize)
+ 	fmh = CheckForNormalFMH_RAM(fmh);
+ 	return fmh;
+ }
+-#endif
++// #endif
+ 
+ FMH *
+ ScanforFMH(struct spi_flash *flash,u32 SectorAddr, unsigned long SectorSize)

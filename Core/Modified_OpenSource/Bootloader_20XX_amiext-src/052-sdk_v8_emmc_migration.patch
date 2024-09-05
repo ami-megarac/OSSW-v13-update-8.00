@@ -1,0 +1,10 @@
+--- uboot_curr/configs/evb-ast2600-emmc_defconfig	2022-03-03 13:57:03.088745262 -0500
++++ uboot/configs/evb-ast2600-emmc_defconfig	2022-03-03 12:16:11.091265800 -0500
+@@ -32,6 +32,7 @@
+ CONFIG_ARMV7_BOOT_SEC_DEFAULT=y
+ CONFIG_NR_DRAM_BANKS=1
+ CONFIG_FIT=y
++CONFIG_IMAGE_FORMAT_LEGACY=y
+ CONFIG_USE_BOOTARGS=y
+ CONFIG_BOOTARGS="console=ttyS4,115200n8 root=/dev/ram rw"
+ CONFIG_USE_BOOTCOMMAND=y
