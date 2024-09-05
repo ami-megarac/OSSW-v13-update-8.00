@@ -1,0 +1,58 @@
+diff -Naur uboot_patch/oem/ami/fmh/cmd_fmh.c uboot/oem/ami/fmh/cmd_fmh.c
+--- uboot_patch/oem/ami/fmh/cmd_fmh.c	2023-02-08 12:09:40.943340314 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2023-02-08 12:38:03.833122033 +0530
+@@ -875,11 +875,15 @@
+             broken_spi_banks = 2;
+ #endif
+     }
++
++
++    #ifndef CONFIG_SPX_FEATURE_SW_FAILSAFE_BOOT
+     return 0;
+-#endif
++    #endif
+ 
+ 
+-	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
++#endif
++        flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
+ 					CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
+ 	if(flash == NULL)
+ 	{
+@@ -893,6 +897,14 @@
+ 	SectorCount = flashsize/SectorSize;
+         memset(&platform_ver,0,sizeof(platform_ver));
+  
++        #if defined (CONFIG_SPX_FEATURE_SW_FAILSAFE_BOOT)  && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++        for(cs=0; cs<CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS ; cs++)
++	{	
++	       if (cs>0)
++	       {
++	         imgIndex++;
++	       }
++        #endif
+ 		/* Scan through the flash for FMH */
+ 		for (i=0;i<SectorCount;)
+ 		{
+@@ -908,7 +920,11 @@
+ 				if( (i*SectorSize) >= CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE ) { break; }
+ 			#endif
+ 			/* Check if FMH found at this sector */
++                        #ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++			fmh = ScanforFMH(flashspi[cs],(i*SectorSize),SectorSize);
++                        #else
+ 			fmh = ScanforFMH(flash,(i*SectorSize),SectorSize);
++                        #endif
+ 			if (fmh == NULL)
+ 			{
+ 				i++;
+@@ -956,6 +972,9 @@
+ 		        }
+ 			i++;
+ 		}
++        #if defined (CONFIG_SPX_FEATURE_SW_FAILSAFE_BOOT)  && defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++	}
++        #endif
+ 		
+         
+         /* check whether reboot caused by watchdog modules reset */

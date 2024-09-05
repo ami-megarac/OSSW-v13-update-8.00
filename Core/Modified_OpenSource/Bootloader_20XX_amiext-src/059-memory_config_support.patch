@@ -1,0 +1,11 @@
+diff -Naur uboot_org/drivers/ram/aspeed/sdram_ast2600.c uboot/drivers/ram/aspeed/sdram_ast2600.c
+--- uboot_org/drivers/ram/aspeed/sdram_ast2600.c	2022-06-27 10:27:06.470505505 +0800
++++ uboot/drivers/ram/aspeed/sdram_ast2600.c	2022-06-27 11:23:19.353210955 +0800
+@@ -835,6 +835,7 @@
+ 		break;
+ 	}
+ 
++	ram_size = (CONFIG_SYS_SDRAM_SYS_USED < ram_size) ? CONFIG_SYS_SDRAM_SYS_USED:ram_size;
+ 	info->info.base = CONFIG_SYS_SDRAM_BASE;
+ 	info->info.size = ram_size - ast2600_sdrammc_get_vga_mem_size(info) - CONFIG_ASPEED_SSP_RERV_MEM;
+ 

@@ -1,0 +1,14 @@
+diff -Naur uboot_org/arch/arm/mach-aspeed/ast2600/scu_info.c uboot/arch/arm/mach-aspeed/ast2600/scu_info.c
+--- uboot_org/arch/arm/mach-aspeed/ast2600/scu_info.c	2022-03-28 21:34:20.749651215 +0530
++++ uboot/arch/arm/mach-aspeed/ast2600/scu_info.c	2022-04-01 15:49:55.003337944 +0530
+@@ -220,7 +220,9 @@
+ 
+ 	if (rest & SYS_PWR_RESET_FLAG) {
+ 		printf("RST: Power On \n");
+-		writel(rest, ASPEED_SYS_RESET_CTRL);
++		/* Keeping the Power on reset flag as SET to differentiate BMC reset
++		for WDT reset and AC power reset*/
++		writel(rest & ~SYS_PWR_RESET_FLAG , ASPEED_SYS_RESET_CTRL);
+ 	} else {
+ 		HANDLE_WDTx_RESET(8, rest3, ASPEED_SYS_RESET_CTRL3);
+ 		HANDLE_WDTx_RESET(7, rest3, ASPEED_SYS_RESET_CTRL3);

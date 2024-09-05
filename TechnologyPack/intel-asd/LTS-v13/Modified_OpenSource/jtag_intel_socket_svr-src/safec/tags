@@ -1,0 +1,490 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+ASM_VOLATILE	mem_primitives_lib.h	119;"	d
+ASM_VOLATILE	mem_primitives_lib.h	124;"	d
+BND_CHK_PTR_BOUNDS	safeclib_private.h	246;"	d
+BND_CHK_PTR_BOUNDS	safeclib_private.h	250;"	d
+BND_CHK_PTR_BOUNDS	safeclib_private.h	252;"	d
+BOS	safe_compile.h	58;"	d
+BOS	safe_compile.h	60;"	d
+BOS	safe_compile.h	75;"	d
+BOSW	safe_compile.h	62;"	d
+BOSW	safe_compile.h	76;"	d
+BOSW_CHK	safe_compile.h	110;"	d
+BOSW_CHK	safe_compile.h	175;"	d
+BOSW_CHK	safe_compile.h	266;"	d
+BOSW_CHK2	safe_compile.h	130;"	d
+BOSW_CHK2	safe_compile.h	190;"	d
+BOSW_CHK2	safe_compile.h	268;"	d
+BOSW_CHK_BUTZERO	safe_compile.h	149;"	d
+BOSW_CHK_BUTZERO	safe_compile.h	170;"	d
+BOSW_CHK_BUTZERO	safe_compile.h	272;"	d
+BOSW_OVR2	safe_compile.h	242;"	d
+BOSW_OVR2	safe_compile.h	274;"	d
+BOSW_OVR2Z	safe_compile.h	247;"	d
+BOSW_OVR2Z	safe_compile.h	276;"	d
+BOSW_OVR2_BUTNULL	safe_compile.h	225;"	d
+BOSW_OVR2_BUTNULL	safe_compile.h	280;"	d
+BOSW_OVR2_BUTZERO	safe_compile.h	221;"	d
+BOSW_OVR2_BUTZERO	safe_compile.h	278;"	d
+BOSW_OVR_BUTNULL	safe_compile.h	218;"	d
+BOSW_OVR_BUTNULL	safe_compile.h	270;"	d
+BOS_ATTR	safe_compile.h	263;"	d
+BOS_ATTR	safe_compile.h	295;"	d
+BOS_ATTR	safe_compile.h	302;"	d
+BOS_CHK	safe_compile.h	101;"	d
+BOS_CHK	safe_compile.h	157;"	d
+BOS_CHK	safe_compile.h	265;"	d
+BOS_CHK2	safe_compile.h	119;"	d
+BOS_CHK2	safe_compile.h	182;"	d
+BOS_CHK2	safe_compile.h	267;"	d
+BOS_CHK_BUTZERO	safe_compile.h	142;"	d
+BOS_CHK_BUTZERO	safe_compile.h	165;"	d
+BOS_CHK_BUTZERO	safe_compile.h	271;"	d
+BOS_FMT	safe_compile.h	231;"	d
+BOS_FMT	safe_compile.h	293;"	d
+BOS_FMT	safe_compile.h	301;"	d
+BOS_NULL	safe_compile.h	228;"	d
+BOS_NULL	safe_compile.h	291;"	d
+BOS_NULL	safe_compile.h	299;"	d
+BOS_NULLPTR	safe_compile.h	300;"	d
+BOS_OVR2	safe_compile.h	202;"	d
+BOS_OVR2	safe_compile.h	273;"	d
+BOS_OVR2Z	safe_compile.h	234;"	d
+BOS_OVR2Z	safe_compile.h	275;"	d
+BOS_OVR2_BUTNULL	safe_compile.h	210;"	d
+BOS_OVR2_BUTNULL	safe_compile.h	279;"	d
+BOS_OVR2_BUTZERO	safe_compile.h	214;"	d
+BOS_OVR2_BUTZERO	safe_compile.h	277;"	d
+BOS_OVR_BUTNULL	safe_compile.h	207;"	d
+BOS_OVR_BUTNULL	safe_compile.h	269;"	d
+BOS_UNKNOWN	safe_compile.h	54;"	d
+CHK_DESTW_OVR	safeclib_private.h	336;"	d
+CHK_DESTW_OVR	safeclib_private.h	424;"	d
+CHK_DESTW_OVR_CLEAR	safeclib_private.h	353;"	d
+CHK_DESTW_OVR_CLEAR	safeclib_private.h	436;"	d
+CHK_DEST_DMAX_BOOL	safeclib_private.h	554;"	d
+CHK_DEST_MEM_NULL	safeclib_private.h	278;"	d
+CHK_DEST_MEM_OVR	safeclib_private.h	385;"	d
+CHK_DEST_MEM_OVR	safeclib_private.h	459;"	d
+CHK_DEST_NULL	safeclib_private.h	266;"	d
+CHK_DEST_OVR	safeclib_private.h	320;"	d
+CHK_DEST_OVR	safeclib_private.h	412;"	d
+CHK_DEST_OVR_BOOL	safeclib_private.h	370;"	d
+CHK_DEST_OVR_BOOL	safeclib_private.h	448;"	d
+CHK_DEST_OVR_CLEAR	safeclib_private.h	305;"	d
+CHK_DEST_OVR_CLEAR	safeclib_private.h	402;"	d
+CHK_DMAX_MAX	safeclib_private.h	290;"	d
+CHK_DMAX_MEM_MAX	safeclib_private.h	296;"	d
+CHK_DMAX_MEM_ZERO	safeclib_private.h	284;"	d
+CHK_DMAX_ZERO	safeclib_private.h	272;"	d
+CHK_OVRLP	safeclib_private.h	578;"	d
+CHK_OVRLP_BUTSAME	safeclib_private.h	584;"	d
+CHK_SLEN_MAX_CLEAR	safeclib_private.h	526;"	d
+CHK_SLEN_MAX_NOSPC_CLEAR	safeclib_private.h	533;"	d
+CHK_SLEN_MEM_MAX_NOSPC_CLEAR	safeclib_private.h	547;"	d
+CHK_SRCW_NULL_CLEAR	safeclib_private.h	484;"	d
+CHK_SRC_MEM_NULL_CLEAR	safeclib_private.h	541;"	d
+CHK_SRC_NULL	safeclib_private.h	472;"	d
+CHK_SRC_NULL_CLEAR	safeclib_private.h	478;"	d
+CHK_SRC_OVR_CLEAR	safeclib_private.h	492;"	d
+CHK_SRC_OVR_CLEAR	safeclib_private.h	505;"	d
+CHK_SRC_OVR_CLEAR	safeclib_private.h	517;"	d
+COMPILER_BARRIER	mem_primitives_lib.h	120;"	d
+COMPILER_BARRIER	mem_primitives_lib.h	125;"	d
+EOK	safe_lib_errno.h	104;"	d
+EOVERFLOW	safeclib_private.h	143;"	d
+EOVERFLOW	safeclib_private.h	145;"	d
+ESEMPTY	safe_lib_errno.h	75;"	d
+ESLAST	safe_lib_errno.h	99;"	d
+ESLEMAX	safe_lib_errno.h	67;"	d
+ESLEMIN	safe_lib_errno.h	63;"	d
+ESLEWRNG	safe_lib_errno.h	95;"	d
+ESNODIFF	safe_lib_errno.h	87;"	d
+ESNOSPC	safe_lib_errno.h	79;"	d
+ESNOTFND	safe_lib_errno.h	91;"	d
+ESNULLP	safe_lib_errno.h	55;"	d
+ESOVRLP	safe_lib_errno.h	71;"	d
+ESUNTERM	safe_lib_errno.h	83;"	d
+ESZEROL	safe_lib_errno.h	59;"	d
+EXPORT	safeclib_private.h	206;"	d
+EXPORT	safeclib_private.h	208;"	d
+EXPORT_SYMBOL	safe_mem_constraint.c	/^EXPORT_SYMBOL(set_mem_constraint_handler_s)$/;"	f
+EXPORT_SYMBOL	safeclib_private.h	157;"	d
+EXTERN	safe_lib.h	48;"	d
+EXTERN	safe_lib.h	50;"	d
+EXTERN	safe_lib.h	58;"	d
+EXTERN	safe_mem_lib.h	53;"	d
+EXTERN	safe_mem_lib.h	55;"	d
+EXTERN	safe_mem_lib.h	58;"	d
+EXTERN	safe_str_lib.h	60;"	d
+EXTERN	safe_str_lib.h	62;"	d
+EXTERN	safe_str_lib.h	65;"	d
+GCC_DIAG_IGNORE	safeclib_private.h	226;"	d
+GCC_DIAG_IGNORE	safeclib_private.h	230;"	d
+GCC_DIAG_PRAGMA	safeclib_private.h	224;"	d
+GCC_DIAG_RESTORE	safeclib_private.h	228;"	d
+GCC_DIAG_RESTORE	safeclib_private.h	231;"	d
+HAVE_ARM_DMB	mem_primitives_lib.h	70;"	d
+HAVE_ARM_NEON	mem_primitives_lib.h	80;"	d
+HAVE_ARM_WMMX	mem_primitives_lib.h	84;"	d
+HAVE_COMPAT_XMM	mem_primitives_lib.h	51;"	d
+HAVE_COMPAT_XMM	mem_primitives_lib.h	61;"	d
+HAVE_CYGWIN64	safeclib_private.h	73;"	d
+HAVE_MINGW32	safe_config.h	44;"	d
+HAVE_MINGW32	safe_lib.h	71;"	d
+HAVE_MINGW64	safe_config.h	42;"	d
+HAVE_MINGW64	safe_lib.h	69;"	d
+HAVE_PPC_ALTIVEC	mem_primitives_lib.h	89;"	d
+HAVE_PPC_SPE	mem_primitives_lib.h	93;"	d
+HAVE_SOLARIS_MBARRIER	mem_primitives_lib.h	97;"	d
+HAVE_X86_X86	mem_primitives_lib.h	76;"	d
+HAVE_X86_XMM	mem_primitives_lib.h	48;"	d
+HAVE_X86_XMM	mem_primitives_lib.h	58;"	d
+HAVE_X86_XMM	mem_primitives_lib.h	68;"	d
+INLINE	safeclib_private.h	173;"	d
+INLINE	safeclib_private.h	176;"	d
+L_tmpnam_s	safe_lib.h	100;"	d
+L_tmpnam_s	safe_lib.h	102;"	d
+MAX_TIME_T_STR	safeclib_private.h	189;"	d
+MAX_TIME_T_STR	safeclib_private.h	191;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	129;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	132;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	134;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	137;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	140;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	143;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	145;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	147;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	149;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	157;"	d
+MEMORY_BARRIER	mem_primitives_lib.h	159;"	d
+NDEBUG	safeclib_private.h	38;"	d
+RCNEGATE	safeclib_private.h	158;"	d
+RCNEGATE	safeclib_private.h	57;"	d
+RETURN_ESLEWRNG	safeclib_private.h	255;"	d
+RETURN_ESLEWRNG	safeclib_private.h	257;"	d
+RETURN_ESLEWRNG	safeclib_private.h	261;"	d
+RETURN_ESLEWRNG	safeclib_private.h	263;"	d
+RSIZE_MAX	safe_types.h	76;"	d
+RSIZE_MAX_MEM	safe_config.h	60;"	d
+RSIZE_MAX_MEM16	safe_mem_lib.h	61;"	d
+RSIZE_MAX_MEM32	safe_mem_lib.h	62;"	d
+RSIZE_MAX_STR	safe_config.h	65;"	d
+RSIZE_MAX_WMEM	safe_mem_lib.h	63;"	d
+RSIZE_MAX_WSTR	safe_str_lib.h	74;"	d
+RSIZE_MIN_STR	safe_str_lib.h	71;"	d
+SAFE_STR_MIN_LOWERCASE	safe_str_lib.h	77;"	d
+SAFE_STR_MIN_NUMBERS	safe_str_lib.h	79;"	d
+SAFE_STR_MIN_SPECIALS	safe_str_lib.h	80;"	d
+SAFE_STR_MIN_UPPERCASE	safe_str_lib.h	78;"	d
+SAFE_STR_PASSWORD_MAX_LENGTH	safe_str_lib.h	83;"	d
+SAFE_STR_PASSWORD_MIN_LENGTH	safe_str_lib.h	82;"	d
+STRTOK_DELIM_MAX_LEN	safe_config.h	134;"	d
+TMP_MAX_S	safe_lib.h	93;"	d
+TMP_MAX_S	safe_lib.h	95;"	d
+VAL_OVR2	safe_compile.h	255;"	d
+VAL_OVR2	safe_compile.h	283;"	d
+VAL_OVR2	safe_compile.h	297;"	d
+VAL_OVR2_BUTZERO	safe_compile.h	259;"	d
+VAL_OVR2_BUTZERO	safe_compile.h	287;"	d
+VAL_OVR2_BUTZERO	safe_compile.h	298;"	d
+WANT_C11	safeclib_private.h	133;"	d
+_BOSW_CHK	safe_compile.h	68;"	d
+_BOSW_CHK	safe_compile.h	78;"	d
+_BOSW_CHK_N	safe_compile.h	72;"	d
+_BOSW_OVR	safe_compile.h	69;"	d
+_BOSW_OVR_N	safe_compile.h	73;"	d
+_BOS_CHK	safe_compile.h	63;"	d
+_BOS_CHK	safe_compile.h	77;"	d
+_BOS_CHK_N	safe_compile.h	70;"	d
+_BOS_KNOWN	safe_compile.h	55;"	d
+_BOS_NULL	safe_compile.h	67;"	d
+_BOS_NULL	safe_compile.h	80;"	d
+_BOS_OVR	safe_compile.h	64;"	d
+_BOS_OVR_N	safe_compile.h	71;"	d
+_BOS_OVR_N	safe_compile.h	81;"	d
+_BOS_ZERO	safe_compile.h	65;"	d
+_BOS_ZERO	safe_compile.h	79;"	d
+_ENC_W16	safeclib_private.h	605;"	d
+_ENC_W16	safeclib_private.h	615;"	d
+_GNU_SOURCE	safeclib_private.h	100;"	d
+_GNU_SOURCE	safeclib_private.h	80;"	d
+_GNU_SOURCE	safeclib_private.h	89;"	d
+_GNU_SOURCE_WAS_DEFINED	safeclib_private.h	78;"	d
+_GNU_SOURCE_WAS_DEFINED	safeclib_private.h	91;"	d
+_IS_W16	safeclib_private.h	628;"	d
+_SECIMP	safe_lib.h	55;"	d
+_SECIMP	safe_lib.h	56;"	d
+_STR	safe_compile.h	91;"	d
+_UNICODE_MAX	safeclib_private.h	195;"	d
+_XSTR	safe_compile.h	90;"	d
+__MEM_PRIMITIVES_LIB_H__	mem_primitives_lib.h	35;"	d
+__SAFECLIB_PRIVATE_H__	safeclib_private.h	35;"	d
+__SAFE_COMPILE_H__	safe_compile.h	31;"	d
+__SAFE_LIB_CONFIG_H__	safe_config.h	34;"	d
+__SAFE_LIB_ERRNO_H__	safe_lib_errno.h	36;"	d
+__SAFE_LIB_H__	safe_lib.h	35;"	d
+__SAFE_MEM_CONSTRAINT_H__	safe_mem_constraint.h	33;"	d
+__SAFE_MEM_CONSTRAINT_H__	safe_str_constraint.h	33;"	d
+__SAFE_MEM_LIB_H__	safe_mem_lib.h	36;"	d
+__SAFE_STR_LIB_H__	safe_str_lib.h	36;"	d
+__SAFE_TYPES_H__	safe_types.h	36;"	d
+__WORDSIZE	mem_primitives_lib.h	105;"	d
+__WORDSIZE	mem_primitives_lib.h	107;"	d
+__attribute_format__	safe_types.h	100;"	d
+__attribute_format__	safe_types.h	81;"	d
+__attribute_format_wprintf	safe_types.h	101;"	d
+__attribute_format_wprintf	safe_types.h	86;"	d
+__attribute_format_wprintf	safe_types.h	89;"	d
+__attribute_format_wscanf	safe_types.h	102;"	d
+__attribute_format_wscanf	safe_types.h	92;"	d
+__attribute_format_wscanf	safe_types.h	95;"	d
+__has_attribute	safe_compile.h	50;"	d
+_dec_w16	safeclib_private.h	604;"	d
+_expect	safeclib_private.h	172;"	d
+_expect	safeclib_private.h	175;"	d
+_memcpy_s_chk	memcpy_s.c	/^EXPORT_SYMBOL(_memcpy_s_chk);$/;"	v
+_memset_s_chk	memset_s.c	/^EXPORT_SYMBOL(_memset_s_chk);$/;"	v
+_sprintf_s_chk	sprintf_s.c	/^EXPORT_SYMBOL(_sprintf_s_chk);$/;"	v
+_strcpy_s_chk	strcpy_s.c	/^EXPORT_SYMBOL(_strcpy_s_chk);$/;"	v
+asctime_s	safe_lib.h	135;"	d
+bos_chk_err	safe_compile.h	85;"	d
+bos_chk_err	safe_compile.h	87;"	d
+bos_chk_sev	safe_compile.h	97;"	d
+bos_chk_sev	safe_compile.h	99;"	d
+bsearch_s	safe_lib.h	184;"	d
+constraint_handler_t	safe_compile.h	/^typedef void (*constraint_handler_t)(const char *restrict \/* msg *\/,$/;"	t
+countp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_CHK2(src, slen) BOS_NULL(countp);$/;"	v
+countp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_OVR2(src, slen) BOS_NULL(countp);$/;"	v
+ctime_s	safe_lib.h	136;"	d
+debug_printf	safeclib_private.h	235;"	d
+debug_printf	safeclib_private.h	237;"	d
+debug_printf	safeclib_private.h	239;"	d
+dest	safe_lib.h	/^    BOS_CHK(dest);$/;"	v
+dest	safe_mem_lib.h	/^    BOS_CHK(dest);$/;"	v
+dest	safe_str_lib.h	/^                                  const size_t destbos) BOS_CHK(dest);$/;"	v
+dest	safe_str_lib.h	/^                               const size_t destbos) BOS_CHK(dest);$/;"	v
+dest	safe_str_lib.h	/^    BOS_CHK(dest);$/;"	v
+diff	safe_mem_lib.h	/^    BOSW_CHK(dest) BOSW_CHK2(src, slen) BOS_NULL(diff);$/;"	v
+dmax	safe_mem_lib.h	/^        BOS_ATTR(n && (_BOS_OVR(dest, n * 2) || n * 2 > dmax),$/;"	v
+dmax	safe_mem_lib.h	/^        BOS_ATTR(n && (_BOS_OVR(dest, n * 4) || n * 4 > dmax),$/;"	v
+dmax	safe_mem_lib.h	/^        BOS_ATTR(n && (_BOS_OVR(dest, n) || n > dmax), "n overflow >dest\/dmax")$/;"	v
+errno_t	safe_types.h	/^typedef int errno_t;$/;"	t
+firstp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_NULL(firstp);$/;"	v
+firstp	safe_str_lib.h	/^    BOS_OVR2(src, slen) BOS_NULL(firstp);$/;"	v
+fmt	safe_str_lib.h	/^                             va_list ap) BOSW_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                            va_list ap) BOSW_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                            va_list ap) BOS_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                           va_list ap) BOS_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                       va_list ap) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                      va_list ap) BOS_NULL(src) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                      va_list ap) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                      va_list arg) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                     ...) __attribute_format_wscanf(2,3) BOS_NULL(src) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                     va_list ap) BOS_NULL(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^                     va_list ap) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^    __attribute_format__(scanf,2,3) BOS_NULL(buffer) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^   __attribute_format__(printf,4,5) BOS_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  EXTERN int vprintf_s(const char *restrict fmt, va_list ap) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  EXTERN int vwscanf_s(const wchar_t *restrict fmt, va_list ap) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(printf,1,2) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(printf,2,3) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(printf,3,4) BOS_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(printf,4,5) BOS_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(scanf,1,2) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format__(scanf,2,3) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wprintf(1,2) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wprintf(2,3) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wprintf(3,4) BOSW_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wprintf(4,5) BOSW_CHK(dest) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wscanf(1,2) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^  __attribute_format_wscanf(2,3) BOS_NULL(stream) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^EXTERN int vscanf_s(const char *restrict fmt, va_list ap) BOS_FMT(fmt);$/;"	v
+fmt	safe_str_lib.h	/^EXTERN int vwprintf_s(const wchar_t *restrict fmt, va_list ap) BOS_FMT(fmt);$/;"	v
+getenv_s	safe_lib.h	173;"	d
+gets_s	safe_lib.h	122;"	d
+handle_mem_bos_chk_warn	safe_str_constraint.c	/^void handle_mem_bos_chk_warn(const char *restrict func, void *restrict dest,$/;"	f
+handle_mem_bos_chk_warn	safe_str_constraint.h	51;"	d
+handle_mem_error	safe_str_constraint.h	/^static inline void handle_mem_error(void *restrict dest, rsize_t dmax,$/;"	f
+ignore_handler_s	ignore_handler_s.c	/^EXPORT void ignore_handler_s(const char *restrict msg, void *restrict ptr,$/;"	f
+ignore_handler_s	ignore_handler_s.c	/^EXPORT_SYMBOL(ignore_handler_s);$/;"	v
+invoke_safe_mem_constraint_handler	safe_str_constraint.c	/^EXPORT void invoke_safe_mem_constraint_handler(const char *msg, void *ptr,$/;"	f
+invoke_safe_mem_constraint_handler	safe_str_constraint.c	/^EXPORT_SYMBOL(invoke_safe_mem_constraint_handler);$/;"	v
+invoke_safe_mem_constraint_handler	safe_str_constraint.c	110;"	d	file:
+invoke_safe_mem_constraint_handler	safe_str_constraint.c	84;"	d	file:
+invoke_safe_mem_constraint_handler	safe_str_constraint.h	50;"	d
+lastp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_NULL(lastp);$/;"	v
+likely	safeclib_private.h	179;"	d
+mbsrtowcs_s	safe_str_lib.h	545;"	d
+mbstowcs_s	safe_str_lib.h	532;"	d
+mem_handler	safe_mem_constraint.c	/^static constraint_handler_t mem_handler = NULL;$/;"	v	file:
+mem_handler	safe_str_constraint.c	/^static constraint_handler_t mem_handler = NULL;$/;"	v	file:
+mem_prim_move	mem_primitives_lib.c	/^void mem_prim_move(void *dest, const void *src, uint32_t len) {$/;"	f
+mem_prim_move16	mem_primitives_lib.c	/^void mem_prim_move16(uint16_t *dest, const uint16_t *src, uint32_t len) {$/;"	f
+mem_prim_move32	mem_primitives_lib.c	/^void mem_prim_move32(uint32_t *dest, const uint32_t *src, uint32_t len) {$/;"	f
+mem_prim_move8	mem_primitives_lib.c	/^void mem_prim_move8(uint8_t *dest, const uint8_t *src, uint32_t len) {$/;"	f
+mem_prim_set	mem_primitives_lib.c	/^void mem_prim_set(void *dest, uint32_t len, uint8_t value) {$/;"	f
+mem_prim_set16	mem_primitives_lib.c	/^void mem_prim_set16(uint16_t *dest, uint32_t len, uint16_t value) {$/;"	f
+mem_prim_set32	mem_primitives_lib.c	/^void mem_prim_set32(uint32_t *dest, uint32_t len, uint32_t value) {$/;"	f
+memccpy_s	safe_mem_lib.h	233;"	d
+memchr_s	safe_mem_lib.h	205;"	d
+memcmp16_s	safe_mem_lib.h	138;"	d
+memcmp32_s	safe_mem_lib.h	147;"	d
+memcmp_s	safe_mem_lib.h	129;"	d
+memcpy16_s	safe_mem_lib.h	156;"	d
+memcpy32_s	safe_mem_lib.h	165;"	d
+memcpy_s	memcpy_s.c	/^errno_t memcpy_s(void *restrict dest, rsize_t dmax,$/;"	f
+memcpy_s	safe_mem_lib.h	79;"	d
+memmove16_s	safe_mem_lib.h	174;"	d
+memmove32_s	safe_mem_lib.h	183;"	d
+memmove_s	safe_mem_lib.h	87;"	d
+memrchr_s	safe_mem_lib.h	211;"	d
+memset16_s	safe_mem_lib.h	111;"	d
+memset32_s	safe_mem_lib.h	120;"	d
+memset_s	memset_s.c	/^errno_t memset_s(void *dest, rsize_t dmax, int value, rsize_t n)$/;"	f
+memset_s	safe_mem_lib.h	94;"	d
+memzero16_s	safe_mem_lib.h	194;"	d
+memzero32_s	safe_mem_lib.h	199;"	d
+memzero_s	safe_mem_lib.h	189;"	d
+ptr	safe_str_lib.h	/^        BOSW_OVR2_BUTNULL(dest, *dmaxp) BOS_NULL(delim) BOS_NULL(ptr);$/;"	v
+ptr	safe_str_lib.h	/^        BOS_NULL(ptr);$/;"	v
+qsort_s	safe_lib.h	195;"	d
+result	safe_mem_lib.h	/^    BOS_CHK(dest) VAL_OVR2(ch, 255) BOS_NULL(result);$/;"	v
+resultp	safe_str_lib.h	/^    BOSW_CHK(dest) BOSW_CHK2(src, smax) BOS_NULL(resultp);$/;"	v
+resultp	safe_str_lib.h	/^    BOSW_CHK2(src, smax) BOS_NULL(resultp);$/;"	v
+resultp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_NULL(src) BOS_NULL(resultp);$/;"	v
+resultp	safe_str_lib.h	/^    BOS_NULL(resultp);$/;"	v
+resultp	safe_str_lib.h	/^    BOS_NULL(src) BOS_NULL(resultp);$/;"	v
+resultp	safe_str_lib.h	/^    VAL_OVR2(ch, 255) BOS_NULL(resultp);$/;"	v
+rsize_t	safe_types.h	/^typedef size_t  rsize_t;$/;"	t
+set_mem_constraint_handler_s	safe_mem_constraint.c	/^set_mem_constraint_handler_s (constraint_handler_t handler)$/;"	f
+set_mem_constraint_handler_s	safe_str_constraint.c	/^EXPORT_SYMBOL(set_mem_constraint_handler_s);$/;"	v
+set_mem_constraint_handler_s	safe_str_constraint.c	/^set_mem_constraint_handler_s(constraint_handler_t handler) {$/;"	f
+sl_default_handler	safe_lib.h	89;"	d
+sl_default_handler	safe_str_lib.h	95;"	d
+slabort	safeclib_private.h	160;"	d
+slabort	safeclib_private.h	64;"	d
+sldebug_printf	safeclib_private.h	163;"	d
+sldebug_printf	safeclib_private.h	167;"	d
+sldebug_printf	safeclib_private.h	199;"	d
+sldebug_printf	safeclib_private.h	201;"	d
+sldebug_printf	safeclib_private.h	61;"	d
+sldebug_printf	safeclib_private.h	66;"	d
+slprintf	safeclib_private.h	162;"	d
+slprintf	safeclib_private.h	165;"	d
+slprintf	safeclib_private.h	60;"	d
+slprintf	safeclib_private.h	63;"	d
+snprintf_s	safe_str_lib.h	180;"	d
+snwprintf_s	safe_str_lib.h	654;"	d
+sprintf_s	safe_str_lib.h	161;"	d
+sprintf_s	sprintf_s.c	/^int sprintf_s(char *restrict dest, rsize_t dmax, const char *restrict fmt, ...)$/;"	f
+src	safe_str_lib.h	/^    BOSW_CHK(dest) BOS_NULL(src);$/;"	v
+src	safe_str_lib.h	/^    BOS_CHK(dest) BOS_NULL(src);$/;"	v
+src	safe_str_lib.h	/^    BOS_NULL(src);$/;"	v
+strcasecmp_s	safe_str_lib.h	260;"	d
+strcasestr_s	safe_str_lib.h	278;"	d
+strcat_s	safe_str_lib.h	106;"	d
+strchr_s	safe_str_lib.h	459;"	d
+strcmp_s	safe_str_lib.h	252;"	d
+strcmpfld_s	safe_str_lib.h	285;"	d
+strcoll_s	safe_str_lib.h	496;"	d
+strcpy_s	safe_str_lib.h	112;"	d
+strcpy_s	strcpy_s.c	/^errno_t strcpy_s(char *restrict dest, rsize_t dmax, const char *restrict src)$/;"	f
+strcpyfld_s	safe_str_lib.h	293;"	d
+strcpyfldin_s	safe_str_lib.h	301;"	d
+strcpyfldout_s	safe_str_lib.h	309;"	d
+strcspn_s	safe_str_lib.h	317;"	d
+strerror_s	safe_str_lib.h	238;"	d
+strfirstchar_s	safe_str_lib.h	324;"	d
+strfirstdiff_s	safe_str_lib.h	332;"	d
+strfirstsame_s	safe_str_lib.h	416;"	d
+strisalphanumeric_s	safe_str_lib.h	338;"	d
+strisascii_s	safe_str_lib.h	344;"	d
+strisdigit_s	safe_str_lib.h	349;"	d
+strishex_s	safe_str_lib.h	354;"	d
+strislowercase_s	safe_str_lib.h	359;"	d
+strismixedcase_s	safe_str_lib.h	365;"	d
+strispassword_s	safe_str_lib.h	371;"	d
+strisuppercase_s	safe_str_lib.h	376;"	d
+strlastchar_s	safe_str_lib.h	383;"	d
+strlastdiff_s	safe_str_lib.h	391;"	d
+strlastsame_s	safe_str_lib.h	423;"	d
+strljustify_s	safe_str_lib.h	397;"	d
+strlwr_s	safe_str_lib.h	483;"	d
+strnatcasecmp_s	safe_str_lib.h	270;"	d
+strnatcmp_s	safe_str_lib.h	268;"	d
+strncat_s	safe_str_lib.h	124;"	d
+strncpy_s	safe_str_lib.h	132;"	d
+strnlen_s	safe_str_lib.h	138;"	d
+strnset_s	safe_str_lib.h	510;"	d
+strnstr	safeclib_private.h	150;"	d
+strnstr	safeclib_private.h	153;"	d
+strnterminate_s	safe_str_lib.h	402;"	d
+strpbrk_s	safe_str_lib.h	409;"	d
+strprefix_s	safe_str_lib.h	430;"	d
+strrchr_s	safe_str_lib.h	466;"	d
+strremovews_s	safe_str_lib.h	436;"	d
+strset_s	safe_str_lib.h	505;"	d
+strspn_s	safe_str_lib.h	443;"	d
+strstr_s	safe_str_lib.h	451;"	d
+strtok_s	safe_str_lib.h	149;"	d
+strtolowercase_s	safe_str_lib.h	473;"	d
+strtouppercase_s	safe_str_lib.h	480;"	d
+strupr_s	safe_str_lib.h	484;"	d
+strzero_s	safe_str_lib.h	490;"	d
+substring	safe_str_lib.h	/^    BOS_CHK(dest) BOS_CHK2(src, slen) BOS_NULL(substring);$/;"	v
+substringp	safe_str_lib.h	/^    BOSW_CHK(dest) BOSW_OVR2(src, slen) BOS_NULL(substringp);$/;"	v
+substringp	safe_str_lib.h	/^    BOS_CHK(dest) BOS_OVR2(src, slen) BOS_NULL(substringp);$/;"	v
+swprintf_s	safe_str_lib.h	634;"	d
+time_t	safeclib_private.h	54;"	d
+timingsafe_bcmp	safe_mem_lib.h	219;"	d
+timingsafe_memcmp	safe_mem_lib.h	225;"	d
+tmpnam_s	safe_lib.h	113;"	d
+towfc_s	safe_str_lib.h	785;"	d
+uintptr_t	safeclib_private.h	/^typedef unsigned long uintptr_t;$/;"	t
+unlikely	safeclib_private.h	180;"	d
+vsnprintf_s	safe_str_lib.h	195;"	d
+vsnwprintf_s	safe_str_lib.h	665;"	d
+vsprintf_s	safe_str_lib.h	172;"	d
+vswprintf	safeclib_private.h	596;"	d
+vswprintf_s	safe_str_lib.h	645;"	d
+wcrtomb_s	safe_str_lib.h	572;"	d
+wcscat_s	safe_str_lib.h	603;"	d
+wcscmp_s	safe_str_lib.h	717;"	d
+wcscoll_s	safe_str_lib.h	765;"	d
+wcscpy_s	safe_str_lib.h	591;"	d
+wcsfc_s	safe_str_lib.h	791;"	d
+wcsicmp_s	safe_str_lib.h	734;"	d
+wcslwr_s	safe_str_lib.h	771;"	d
+wcsnatcmp_s	safe_str_lib.h	743;"	d
+wcsnaticmp_s	safe_str_lib.h	745;"	d
+wcsncat_s	safe_str_lib.h	614;"	d
+wcsncmp_s	safe_str_lib.h	725;"	d
+wcsncpy_s	safe_str_lib.h	597;"	d
+wcsnlen_s	safe_str_lib.h	586;"	d
+wcsnorm_compose_s	safe_str_lib.h	818;"	d
+wcsnorm_decompose_s	safe_str_lib.h	801;"	d
+wcsnorm_reorder_s	safe_str_lib.h	809;"	d
+wcsnorm_s	safe_str_lib.h	838;"	d
+wcsnset_s	safe_str_lib.h	757;"	d
+wcsrtombs_s	safe_str_lib.h	557;"	d
+wcsset_s	safe_str_lib.h	751;"	d
+wcsstr_s	safe_str_lib.h	708;"	d
+wcstok_s	safe_str_lib.h	625;"	d
+wcstombs_s	safe_str_lib.h	565;"	d
+wcsupr_s	safe_str_lib.h	775;"	d
+wctomb_s	safe_str_lib.h	581;"	d
+wmask	mem_primitives_lib.c	450;"	d	file:
+wmask	mem_primitives_lib.c	596;"	d	file:
+wmask	mem_primitives_lib.c	598;"	d	file:
+wmemcmp_s	safe_mem_lib.h	263;"	d
+wmemcpy_s	safe_mem_lib.h	247;"	d
+wmemmove_s	safe_mem_lib.h	254;"	d
+wsize	mem_primitives_lib.c	449;"	d	file:
+wsize	mem_primitives_lib.c	595;"	d	file:
+wsize	mem_primitives_lib.c	597;"	d	file:

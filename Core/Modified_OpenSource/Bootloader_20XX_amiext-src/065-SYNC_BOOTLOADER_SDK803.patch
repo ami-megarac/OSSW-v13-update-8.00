@@ -1,0 +1,130 @@
+--- uboot/arch/arm/mach-aspeed/ast2600/platform.S	2022-10-21 13:53:54.997822774 +0800
++++ uboot-new/arch/arm/mach-aspeed/ast2600/platform.S	2022-10-24 13:55:10.717513071 +0800
+@@ -48,7 +48,7 @@
+ #define AST_SCU_USB_MULTI_FUNC		(AST_SCU_BASE + 0x440)
+ #define AST_SCU_HW_STRAP1		(AST_SCU_BASE + 0x500)
+ #define AST_SCU_HW_STRAP2		(AST_SCU_BASE + 0x510)
+-#define AST_SCU_HW_STRAP3               (AST_SCU_BASE + 0x51C)
++#define AST_SCU_HW_STRAP3		(AST_SCU_BASE + 0x51C)
+ #define AST_SCU_CA7_PARITY_CHK		(AST_SCU_BASE + 0x820)
+ #define AST_SCU_CA7_PARITY_CLR		(AST_SCU_BASE + 0x824)
+ #define AST_SCU_MMIO_DEC_SET		(AST_SCU_BASE + 0xC24)
+@@ -62,6 +62,9 @@
+ #define AST_GPIO_BASE		(0x1E780000)
+ #define AST_GPIOYZ_DATA_VALUE	(AST_GPIO_BASE + 0x1E0)
+ 
++#define AST_SEC_BASE		(0x1E6F2000)
++#define AST_SEC_VAULT_KEY_CTRL	(AST_SEC_BASE + 0x80C)
++
+ /* Revision ID */
+ #define REV_ID_AST2600A0	0x05000303
+ #define REV_ID_AST2600A1	0x05010303
+@@ -239,13 +242,18 @@
+ 	str	r1, [r0]
+ 
+ 2:
++	/* Enable Vault Key Write Protection */
++	mov	r0, #0x2
++	ldr	r1, =AST_SEC_VAULT_KEY_CTRL
++	str	r0, [r1]
++
+ 	/* PCIeRC/E2M8 power-on reset comes from SCU040
+-       It need set SCU040[18] high to reset PCIeRC/E2M
+-       when AC power-on */
+-       ldr     r0,  =AST_SCU_SYSRST_EVENT
+-       ldr     r1, [r0]
+-       tst     r1, #0x1
+-       beq     3f
++	It need set SCU040[18] high to reset PCIeRC/E2M
++	when AC power-on */
++	ldr	r0,  =AST_SCU_SYSRST_EVENT
++	ldr	r1, [r0]
++	tst	r1, #0x1
++	beq	3f
+ 	ldr     r0, =AST_SCU_SYSRST_CTRL
+ 	movw    r1, #0x0000
+ 	movt    r1, #0x0004
+@@ -303,32 +311,34 @@
+ 	str	r0, [r1]
+ skip_fill_wip_bit:
+ 
++#if !defined(CONFIG_ASPEED_DEFAULT_SPI_FREQUENCY)
+ 	/* tune up SPI clock */
+ 	movw	r0, #0x0600
+ 	movt	r0, #0x0000
+ 	ldr	r1, =AST_FMC_CE0_CTRL
+ 	str	r0, [r1]
++#endif
+ 
+-        /* disable FMC WDT for SPI address mode detection */
+-        mov     r0, #0
+-        ldr     r1, =AST_FMC_WDT1_CTRL_MODE
+-        str     r0, [r1]
+-
+-        /* disable backdoor for A1/A2 to align A3 design */
+-        ldr     r0, =AST_SCU_HW_STRAP3
+-        ldr     r0, [r0]
+-        tst     r0, #0x1
+-
+-        ldr     r0, =AST_SCU_DEBUG_CTRL
+-        movwne  r1, #0x0ffd
+-        movweq  r1, #0x0fff
+-        movt    r1, #0x0000
+-        str     r1, [r0]
+-
+-        ldr     r0, =AST_SCU_DEBUG_CTRL2
+-        movne   r1, #0xf7
+-        moveq   r1, #0xff
+-        str     r1, [r0]
++	/* disable FMC WDT for SPI address mode detection */
++	mov	r0, #0
++	ldr	r1, =AST_FMC_WDT1_CTRL_MODE
++	str	r0, [r1]
++
++	/* disable backdoor for A1/A2 to align A3 design */
++	ldr	r0, =AST_SCU_HW_STRAP3
++	ldr	r0, [r0]
++	tst	r0, #0x1
++
++	ldr	r0, =AST_SCU_DEBUG_CTRL
++	movwne	r1, #0x0ffd
++	movweq	r1, #0x0fff
++	movt	r1, #0x0000
++	str	r1, [r0]
++
++	ldr	r0, =AST_SCU_DEBUG_CTRL2
++	movne	r1, #0xf7
++	moveq	r1, #0xff
++	str	r1, [r0]
+ 
+ 	/* relocate mailbox insn. for cpuN polling SMP go signal */
+ 	adrl	r0, mailbox_insn
+--- uboot/arch/arm/include/asm/arch-aspeed/platform.h	2022-10-24 14:00:33.700684298 +0800
++++ uboot-new/arch/arm/include/asm/arch-aspeed/platform.h	2022-10-24 14:01:10.708776433 +0800
+@@ -18,7 +18,7 @@
+ #define ASPEED_HW_STRAP1	0x1e6e2070
+ #define ASPEED_REVISION_ID	0x1e6e207C
+ #define ASPEED_SYS_RESET_CTRL	0x1e6e203C
+-#define ASPEED_VGA_HANDSHAKE0	0x1e6e2040	/*	VGA fuction handshake register */
++#define ASPEED_VGA_HANDSHAKE0	0x1e6e2040	/*	VGA function handshake register */
+ #define ASPEED_DRAM_BASE	0x40000000
+ #define ASPEED_SRAM_BASE	0x1E720000
+ #define ASPEED_SRAM_SIZE	0x8000
+@@ -29,7 +29,7 @@
+ #define ASPEED_HW_STRAP2	0x1e6e20D0
+ #define ASPEED_REVISION_ID	0x1e6e207C
+ #define ASPEED_SYS_RESET_CTRL	0x1e6e203C
+-#define ASPEED_VGA_HANDSHAKE0	0x1e6e2040	/*	VGA fuction handshake register */
++#define ASPEED_VGA_HANDSHAKE0	0x1e6e2040	/*	VGA function handshake register */
+ #define ASPEED_MAC_COUNT	2
+ #define ASPEED_DRAM_BASE	0x80000000
+ #define ASPEED_SRAM_BASE	0x1E720000
+@@ -47,7 +47,7 @@
+ #define ASPEED_SYS_RESET_CTRL	0x1e6e2064
+ #define ASPEED_SYS_RESET_CTRL3	0x1e6e206c
+ #define ASPEED_GPIO_YZ_DATA	0x1e7801e0
+-#define ASPEED_VGA_HANDSHAKE0	0x1e6e2100	/*	VGA fuction handshake register */
++#define ASPEED_VGA_HANDSHAKE0	0x1e6e2100	/*	VGA function handshake register */
+ #define ASPEED_SB_STS		0x1e6f2014
+ #define ASPEED_OTP_QSR		0x1e6f2040
+ #define ASPEED_MAC_COUNT	4

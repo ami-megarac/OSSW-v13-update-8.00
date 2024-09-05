@@ -1,0 +1,13 @@
+diff -Nur uboot/arch/arm/mach-aspeed/ast2600/board_common.c uboot_new/arch/arm/mach-aspeed/ast2600/board_common.c
+--- uboot/arch/arm/mach-aspeed/ast2600/board_common.c	2022-10-13 19:51:14.008437095 +0530
++++ uboot_new/arch/arm/mach-aspeed/ast2600/board_common.c	2022-10-13 19:55:00.224830507 +0530
+@@ -89,6 +89,9 @@
+ 
+ 	// Hardware Strap 2, set decode 0x4E 
+ 	*(volatile u32 *)(0x1e6e2000) = 0x1688A8A8;
++	//enable host vga and display port
++	*((volatile u32 *)(0x1e6e2000 + 0xc0)) &= ~(1 << 16 );
++	*((volatile u32 *)(0x1e6e2000 + 0xc0)) &= ~(1 << 18 );
+ #ifdef CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT
+ 	#ifdef CONFIG_SPX_FEATURE_SINGLE_SPI_ABR
+ 		*((volatile u32 *)(0x1e6e2000 + 0x510)) |= (1 << 12 );//single spi ABR mode

@@ -1,0 +1,94 @@
+#!/bin/sh
+# /etc/init.d/remote_debug_init
+#
+# chkconfig: 2345 10 90
+#Runlevel : S = S63
+#Runlevel : 6 = K63
+# Restart the service on warm reboot
+#Runlevel : 9 = K63
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+test -f /usr/local/bin/RemoteDebugServer || exit 0
+
+#updating Version
+/usr/local/bin/RemoteDebugServer -v  &
+
+file_name="/etc/core_features"
+isFeatureEnable()
+{
+	if [ -f $file_name ]; then
+
+		target=$(grep $1 $file_name)
+		if [ $target == $1 ]; then
+			return 1
+		else	
+	  		return 0
+		fi
+	fi
+}
+
+load_driver()
+{
+	#Load Intel JTAG Driver
+	modprobe jtag_intel_core
+	modprobe jtag_intel_aspeed
+}
+
+unload_driver()
+{
+	#Unload Intel Jtag Driver
+	modprobe -r jtag_intel_aspeed
+	modprobe -r jtag_intel_core
+}
+
+case "$1" in
+start)
+	isFeatureEnable CONFIG_SPX_FEATURE_INTEL_REMOTE_DBG_AUTO_SUPPORT
+	if [ $? != 1 ]; then
+		echo "Auto Start is not Enable, Please use IPMI Cmd to start server."
+		echo "or" 
+		echo "Use: $0 manual"
+		exit 0
+	fi
+
+	isFeatureEnable CONFIG_SPX_FEATURE_INTEL_TLS_AUTH
+	if [ $? != 1 ]; then
+		/usr/local/bin/RemoteDebugServer -u &
+	else
+		/usr/local/bin/RemoteDebugServer -k /conf/asd_ssl.pem &
+	fi
+	;;
+manual)
+
+	isFeatureEnable CONFIG_SPX_FEATURE_INTEL_TLS_AUTH
+	if [ $? != 1 ]; then
+		/usr/local/bin/RemoteDebugServer -u &
+	else
+		/usr/local/bin/RemoteDebugServer -k /conf/asd_ssl.pem &
+	fi
+	;;
+stop)
+	killall RemoteDebugServer
+	rm /var/run/RemoteDebugServer.pid
+
+	;;
+restart)
+	killall RemoteDebugServer
+	rm /var/run/RemoteDebugServer.pid
+	isFeatureEnable CONFIG_SPX_FEATURE_INTEL_TLS_AUTH
+	if [ $? != 1 ]; then
+		/usr/local/bin/RemoteDebugServer -u &
+	else
+		/usr/local/bin/RemoteDebugServer -k /conf/asd_ssl.pem &
+	fi
+	;;
+
+*)
+	echo "Usage: $0 {start|manual|stop|restart}"
+	exit 1
+	;;
+esac
+
+exit 0
+

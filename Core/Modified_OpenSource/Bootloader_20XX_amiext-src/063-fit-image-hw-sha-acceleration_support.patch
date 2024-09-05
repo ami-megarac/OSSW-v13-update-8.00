@@ -1,0 +1,194 @@
+diff -Naur uboot_old/common/image-fit.c uboot_new/common/image-fit.c
+--- uboot_old/common/image-fit.c	2022-09-07 13:26:22.763134032 +0530
++++ uboot_new/common/image-fit.c	2022-09-07 14:36:13.682201629 +0530
+@@ -28,6 +28,12 @@
+ #include <u-boot/md5.h>
+ #include <u-boot/sha1.h>
+ #include <u-boot/sha256.h>
++#include <u-boot/sha512.h>
++#include <time.h>
++
++#if defined(CONFIG_SHA_PROG_HW_ACCEL)
++#define MAX_READ_BLOCK 32*1024
++#endif
+ 
+ /*****************************************************************************/
+ /* New uImage format routines */
+@@ -1134,29 +1140,45 @@
+  *     0, on success
+  *    -1, when algo is unsupported
+  */
+-int calculate_hash(const void *data, int data_len, const char *algo,
++//int calculate_hash(const void *data, int data_len, const char *algo,
++//			uint8_t *value, int *value_len)
++int calculate_hash(const void *data, int data_len, const char *algo_name,
+ 			uint8_t *value, int *value_len)
+ {
+-	if (IMAGE_ENABLE_CRC32 && strcmp(algo, "crc32") == 0) {
+-		*((uint32_t *)value) = crc32_wd(0, data, data_len,
+-							CHUNKSZ_CRC32);
+-		*((uint32_t *)value) = cpu_to_uimage(*((uint32_t *)value));
+-		*value_len = 4;
+-	} else if (IMAGE_ENABLE_SHA1 && strcmp(algo, "sha1") == 0) {
+-		sha1_csum_wd((unsigned char *)data, data_len,
+-			     (unsigned char *)value, CHUNKSZ_SHA1);
+-		*value_len = 20;
+-	} else if (IMAGE_ENABLE_SHA256 && strcmp(algo, "sha256") == 0) {
+-		sha256_csum_wd((unsigned char *)data, data_len,
+-			       (unsigned char *)value, CHUNKSZ_SHA256);
+-		*value_len = SHA256_SUM_LEN;
+-	} else if (IMAGE_ENABLE_MD5 && strcmp(algo, "md5") == 0) {
+-		md5_wd((unsigned char *)data, data_len, value, CHUNKSZ_MD5);
+-		*value_len = 16;
+-	} else {
++	struct hash_algo *algo;
++#if defined(CONFIG_SHA_PROG_HW_ACCEL)
++	size_t bytes_to_read =0;
++	unsigned int tot_bytes_read = 0;
++	unsigned char buf[MAX_READ_BLOCK] = {0};
++	void *ctx_hw=NULL;
++#endif
++
++#if defined(CONFIG_SHA_PROG_HW_ACCEL)
++	if (hash_progressive_lookup_algo(algo_name, &algo)) {
+ 		debug("Unsupported hash alogrithm\n");
+ 		return -1;
+ 	}
++	algo->hash_init(algo, &ctx_hw);
++	while ( tot_bytes_read < data_len ) {
++		memset(buf,0x0,sizeof(buf));
++		const unsigned char *output=(const unsigned char *)data;
++		if ( (tot_bytes_read + MAX_READ_BLOCK) > data_len )
++			bytes_to_read = data_len - tot_bytes_read;
++		else
++			bytes_to_read = MAX_READ_BLOCK;
++		memcpy(buf,(const void *)(output+tot_bytes_read*sizeof(unsigned char)),bytes_to_read);
++		algo->hash_update(algo, ctx_hw, buf,bytes_to_read, 0);
++		tot_bytes_read += bytes_to_read;
++	}
++	algo->hash_finish(algo, ctx_hw, value, algo->digest_size);
++#else
++	if (hash_lookup_algo(algo_name, &algo)) {
++		debug("Unsupported hash alogrithm\n");
++		return -1;
++	}
++	algo->hash_func_ws(data, data_len, value, algo->chunk_size);
++#endif
++	*value_len = algo->digest_size;
+ 	return 0;
+ }
+ 
+@@ -1170,6 +1192,7 @@
+ 	int fit_value_len;
+ 	int ignore;
+ 
++
+ 	*err_msgp = NULL;
+ 
+ 	if (fit_image_hash_get_algo(fit, noffset, &algo)) {
+@@ -1191,11 +1214,13 @@
+ 		*err_msgp = "Can't get hash value property";
+ 		return -1;
+ 	}
++	
+ 
+ 	if (calculate_hash(data, size, algo, value, &value_len)) {
+ 		*err_msgp = "Unsupported hash algorithm";
+ 		return -1;
+ 	}
++	
+ 
+ 	if (value_len != fit_value_len) {
+ 		*err_msgp = "Bad hash value len";
+diff -Naur uboot_old/include/image.h uboot_new/include/image.h
+--- uboot_old/include/image.h	2022-09-07 13:26:22.743134117 +0530
++++ uboot_new/include/image.h	2022-09-07 14:36:13.650201182 +0530
+@@ -32,8 +32,12 @@
+ #define CONFIG_FIT_VERBOSE	1 /* enable fit_format_{error,warning}() */
+ #define CONFIG_FIT_ENABLE_RSASSA_PSS_SUPPORT 1
+ #define CONFIG_FIT_ENABLE_SHA256_SUPPORT
++#define CONFIG_FIT_ENABLE_SHA384_SUPPORT
++#define CONFIG_FIT_ENABLE_SHA512_SUPPORT
+ #define CONFIG_SHA1
+ #define CONFIG_SHA256
++#define CONFIG_SHA384
++#define CONFIG_SHA512
+ 
+ #define IMAGE_ENABLE_IGNORE	0
+ #define IMAGE_INDENT_STRING	""
+@@ -93,6 +97,20 @@
+ #define IMAGE_ENABLE_SHA256	0
+ #endif
+ 
++#if defined(CONFIG_FIT_ENABLE_SHA384_SUPPORT) || \
++	defined(CONFIG_SPL_SHA384_SUPPORT)
++#define IMAGE_ENABLE_SHA384	1
++#else
++#define IMAGE_ENABLE_SHA384	0
++#endif
++
++#if defined(CONFIG_FIT_ENABLE_SHA512_SUPPORT) || \
++	defined(CONFIG_SPL_SHA512_SUPPORT)
++#define IMAGE_ENABLE_SHA512	1
++#else
++#define IMAGE_ENABLE_SHA512	0
++#endif
++
+ #endif /* IMAGE_ENABLE_FIT */
+ 
+ #ifdef CONFIG_SYS_BOOT_GET_CMDLINE
+diff -Naur uboot_old/Kconfig uboot_new/Kconfig
+--- uboot_old/Kconfig	2022-09-07 13:26:22.547134946 +0530
++++ uboot_new/Kconfig	2022-09-07 14:36:13.502199114 +0530
+@@ -283,12 +283,26 @@
+ 	help
+ 	  Enable this to support SHA256 checksum of FIT image contents. A
+ 	  SHA256 checksum is a 256-bit (32-byte) hash value used to check that
+-	  the image contents have not been corrupted. SHA256 is recommended
+-	  for use in secure applications since (as at 2016) there is no known
+-	  feasible attack that could produce a 'collision' with differing
+-	  input data. Use this for the highest security. Note that only the
+-	  SHA256 variant is supported: SHA512 and others are not currently
+-	  supported in U-Boot.
++	  the image contents have not been corrupted.
++
++config FIT_ENABLE_SHA384_SUPPORT
++	bool "Support SHA384 checksum of FIT image contents"
++	default n
++	select SHA384
++	help
++	  Enable this to support SHA384 checksum of FIT image contents. A
++	  SHA384 checksum is a 384-bit (48-byte) hash value used to check that
++	  the image contents have not been corrupted. Use this for the highest
++	  security.
++
++config FIT_ENABLE_SHA512_SUPPORT
++	bool "Support SHA512 checksum of FIT image contents"
++	default n
++	select SHA512
++	help
++	  Enable this to support SHA512 checksum of FIT image contents. A
++	  SHA512 checksum is a 512-bit (64-byte) hash value used to check that
++	  the image contents have not been corrupted.
+ 
+ config FIT_SIGNATURE
+ 	bool "Enable signature verification of FIT uImages"
+diff -Naur uboot_old/tools/Makefile uboot_new/tools/Makefile
+--- uboot_old/tools/Makefile	2022-09-07 13:26:22.771133999 +0530
++++ uboot_new/tools/Makefile	2022-09-07 14:36:13.686201685 +0530
+@@ -110,6 +110,7 @@
+ 			lib/crc16.o \
+ 			lib/sha1.o \
+ 			lib/sha256.o \
++			lib/sha512.o \
+ 			common/hash.o \
+ 			ublimage.o \
+ 			zynqimage.o \
+@@ -209,6 +210,7 @@
+ HOSTCFLAGS_md5.o := -pedantic
+ HOSTCFLAGS_sha1.o := -pedantic
+ HOSTCFLAGS_sha256.o := -pedantic
++HOSTCFLAGS_sha512.o := -pedantic -DCONFIG_SHA512 -DCONFIG_SHA384
+ 
+ quiet_cmd_wrap = WRAP    $@
+ cmd_wrap = echo "\#include <../$(patsubst $(obj)/%,%,$@)>" >$@

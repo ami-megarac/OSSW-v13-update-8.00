@@ -1,0 +1,23 @@
+diff -Naur busybox.org/networking/udhcp/dhcpc.c busybox/networking/udhcp/dhcpc.c
+--- busybox.org/networking/udhcp/dhcpc.c	2022-06-23 14:53:09.528457640 +0800
++++ busybox/networking/udhcp/dhcpc.c	2022-06-23 14:54:16.661689302 +0800
+@@ -1310,8 +1310,8 @@
+ 	void *clientid_mac_ptr;
+ 	llist_t *list_O = NULL;
+ 	llist_t *list_x = NULL;
+-	int tryagain_timeout = 20;
+-	int discover_timeout = 3;
++	int tryagain_timeout = 3;
++	int discover_timeout = 1;
+ 	int discover_retries = 3;
+ #ifdef CONFIG_SPX_FEATURE_DCMI_VERSION_1_5_SUPPORT
+ 	int current_timeout  = 0;
+@@ -1618,7 +1618,7 @@
+ 					goto ret;
+ 				}
+ 				/* wait before trying again */
+-				timeout = tryagain_timeout+client_config.interval *10;
++				timeout = tryagain_timeout;
+ #ifdef CONFIG_SPX_FEATURE_DCMI_VERSION_1_5_SUPPORT 
+ 				/* Reset the Current timeout value*/
+ 				if(timing1 != 0)

@@ -1,0 +1,58 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "TOR": {
+        "RecordEnable": true,
+        "RecordType": "0x09",
+        "ProductType": "0x1c",
+        "_skip_on_fail": true,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/TOR/",
+        "PreReq": {
+          "PECICmds": [
+            {
+              "CrashDump_Discovery" : [
+                {
+                  "Params" : ["Target", 0, 0, 0, 0, 1],
+                  "InternalVar": "IsCrashdumpEnable",
+                  "Comment" : "Check and return if big core related crashdump is enabled"
+                }, {
+                  "Params" : ["Target", 1, 0, 0, 0, 2],
+                  "InternalVar": "NumCrashdumpAgents",
+                  "Comment" : "Get number of supported crash agents"
+                }, {
+                  "Params" : ["Target", 2, 0, 1, 0, 8],
+                  "InternalVar": "CrashdumpGUID",
+                  "Comment" : "Get the unique ID (GUID)"
+                }, {
+                  "Params" : ["Target", 2, 1, 1, 0, 8],
+                  "InternalVar": "CrashdumpPayloadSize",
+                  "Comment" : "Get the payload size"
+                }
+              ]
+            }
+          ]
+        },
+        "PECICmds": [
+          {
+            "LogTor": {"Params": ["IsCrashdumpEnable", "NumCrashdumpAgents", "CrashdumpGUID", "CrashdumpPayloadSize"]}
+          }
+        ]
+      }
+    }
+  ]
+}

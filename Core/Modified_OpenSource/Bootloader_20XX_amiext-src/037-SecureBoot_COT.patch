@@ -1,0 +1,42 @@
+--- uboot_org/oem/ami/fmh/hrotcore.c	2021-07-31 00:49:49.081507024 +0800
++++ uboot/oem/ami/fmh/hrotcore.c	2021-07-31 00:50:26.000000000 +0800
+@@ -19,6 +19,9 @@
+ #define SIGNATURE_LENGTH	256
+ #define KEY_INFO_LENGTH		4096
+ #define HASH_BLK_SIZE           262144
++#ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
++#define RSA_KEY_LOADADDR	(ASPEED_SRAM_BASE + 0xd000 ) 
++#endif
+ 
+ static sha256_context ctx;
+ static UINT32 boot_fmh_location,product_info_offset=0;
+@@ -106,7 +109,9 @@
+ int
+ hrot_finish(unsigned long startaddress){
+         unsigned char output [65];
++#ifndef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+         UINT32 keyInfo = startaddress + boot_fmh_location - KEY_INFO_LENGTH;
++#endif 
+         UINT32 sigaddr = product_info_offset  - PROD_SIG_OFFSET;
+         int rc = 0;
+         int size = 64;
+@@ -126,10 +131,16 @@
+ 		}
+         sha256_finish(&ctx, output);
+ 
+-
+-	   rc = spi_flash_read(flash,keyInfo, KEY_INFO_LENGTH*4, linebuf);
++#ifndef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
++	    rc = spi_flash_read(flash,keyInfo, KEY_INFO_LENGTH*4, linebuf);
+         buf = (rc == ERR_OK) ? linebuf : (void*)keyInfo;
+-
++#else
++        if(0){
++        	linebuf[0]=linebuf[0];
++        }
++        memcpy(linebuf,(char*)RSA_KEY_LOADADDR,KEY_INFO_LENGTH*4);
++        buf=linebuf;
++#endif        
+         memset(identifier,0,sizeof(START_IDENTIFIER));
+         memcpy(identifier,buf,sizeof(START_IDENTIFIER));
+         identifier[7]=0;

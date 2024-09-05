@@ -1,0 +1,11 @@
+diff -Naur busybox_ori/networking/ifupdown.c busybox/networking/ifupdown.c
+--- busybox_ori/networking/ifupdown.c	2023-01-12 16:08:26.289597655 +0800
++++ busybox/networking/ifupdown.c	2023-01-12 16:07:25.451921259 +0800
+@@ -415,6 +415,7 @@
+ # else
+ 	result = execute("ip -f inet6 addr flush dev %iface%", ifd, exec);
+ 	result += execute("ifconfig %iface% down", ifd, exec);
++	result += execute("[[route -A inet6 del ::/0 gw %gateway%[[ metric %metric%]] %iface%]]", ifd, exec);
+ # endif
+ 	return result;
+ }

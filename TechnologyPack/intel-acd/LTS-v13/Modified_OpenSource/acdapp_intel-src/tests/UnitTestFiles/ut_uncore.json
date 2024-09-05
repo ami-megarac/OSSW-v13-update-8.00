@@ -1,0 +1,190 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "Uncore_MMIO": {
+        "RecordEnable": true,
+        "RecordType": "0x08",
+        "ProductType": "0x1c",
+        "Revision": "0x22",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore",
+        "PreReq": {
+          "PECICmds": [
+            {
+              "RdEndpointConfigPCILocal": [
+                {
+                  "Params": [
+                    "Target",
+                    0,
+                    8,
+                    3,
+                    0,
+                    "0x1a0",
+                    4
+                  ],
+                  "Output": {
+                    "Name": [
+                      "cpubusno_valid"
+                    ]
+                  },
+                  "InternalVar": "CPUBusNumValid"
+                },
+                {
+                  "Params": [
+                    "Target",
+                    0,
+                    8,
+                    3,
+                    0,
+                    "0x1cc",
+                    4
+                  ],
+                  "Output": {
+                    "Name": [
+                      "cpubusno7"
+                    ]
+                  },
+                  "InternalVar": "CPUBusNum7"
+                },
+                {
+                  "Params": [
+                    "Target",
+                    0,
+                    8,
+                    3,
+                    0,
+                    "0x198",
+                    4
+                  ],
+                  "Output": {
+                    "Name": [
+                      "cpubusno2"
+                    ]
+                  },
+                  "InternalVar": "CPUBusNum2"
+                }
+              ]
+            },
+            {
+              "RdPostEnumBus": [
+                {
+                  "Params": [
+                    "CPUBusNumValid",
+                    "CPUBusNum7",
+                    30,
+                    16
+                  ],
+                  "Output": {
+                    "Name": [
+                      "post_enum_bus30"
+                    ]
+                  },
+                  "InternalVar": "PostEnumBus30",
+                  "comment": "if CPUBusNumValid bit 30 is 1, then PostEnumBus30 = ((CPUBusNum7 >> 16) & 0xff)"
+                },
+                {
+                  "Params": [
+                    "CPUBusNumValid",
+                    "CPUBusNum2",
+                    8,
+                    0
+                  ],
+                  "Output": {
+                    "Name": [
+                      "post_enum_bus8"
+                    ]
+                  },
+                  "InternalVar": "PostEnumBus8",
+                  "comment": "if CPUBusNumValid bit 8 is 1, then PostEnumBus8 = ((CPUBusNum2 >> 0) & 0xff)"
+                }
+              ]
+            }
+          ]
+        },
+        "PECICmds": [
+          {
+            "RdEndpointConfigMMIO": [
+              {
+                "Params": [
+                  "Target",
+                  0,
+                  "PostEnumBus8",
+                  0,
+                  0,
+                  0,
+                  6,
+                  "0xbc93c",
+                  4
+                ],
+                "Output": {
+                  "Name": [
+                    "B08_D00_F0_0xbc93c"
+                  ]
+                }
+              },
+              {
+                "Params": [
+                  "Target",
+                  0,
+                  "PostEnumBus30",
+                  29,
+                  0,
+                  0,
+                  6,
+                  "0x2b460",
+                  4
+                ],
+                "Output": {
+                  "Name": [
+                    "B30_D29_F0_0x2b460"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "Uncore_RdIAMSR": {
+        "RecordEnable": true,
+        "RecordType": "0x08",
+        "ProductType": "0x1c",
+        "Revision": "0x22",
+        "SkipOnFail": false,
+        "LoopOnCPU": true,
+        "MaxTimeSec": 30,
+        "OutputPath": "crash_data/PROCESSORS/cpu%d/uncore",
+        "PreReq": {
+          "PECICmds": []
+        },
+        "PECICmds": [
+          {
+            "RdIAMSR": [
+              {"Params": ["Target", 0, "0x17"], "Output": {"Size": 8,"Name": ["RDIAMSR_0x17"]}},
+              {"Params": ["Target", 39, "0x82a0"], "Output": {"Size": 4,"Name": ["RDIAMSR_mdfv15_0x82a0"]}},
+              {"Params": ["Target", 39, "0x82a9"], "Output": {"Size": 4,"Name": ["RDIAMSR_mdfv15_0x82a9"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

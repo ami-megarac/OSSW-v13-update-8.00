@@ -1,0 +1,130 @@
+From 30dfd04e0049c917c0da32633c17bf77b9f547e2 Mon Sep 17 00:00:00 2001
+From: saikumaru <saikumaru@ami.com>
+Date: Mon, 5 Aug 2024 17:50:32 +0530
+Subject: [PATCH] Fixed the Dual image spi flash issue
+
+Fixed the Dual image spi flash issue 
+drivers/spi/aspeed_spi.c | 85 +++++++++++-----------------------------
+ 1 file changed, 23 insertions(+), 62 deletions(-)
+
+diff --git a/drivers/spi/aspeed_spi.c b/drivers/spi/aspeed_spi.c
+index 4eaf93bb..e7696f35 100644
+--- a/drivers/spi/aspeed_spi.c
++++ b/drivers/spi/aspeed_spi.c
+@@ -691,26 +691,29 @@ static int aspeed_spi_controller_init(struct aspeed_spi_priv *priv)
+ 	if (priv->new_ver) {
+ 		for (cs = 0; cs < priv->flash_count; cs++) {
+ 			struct aspeed_spi_flash *flash = &priv->flashes[cs];
++			u32 seg_addr = readl(&priv->regs->segment_addr[cs]);
+ 			u32 addr_config = 0;
+ 			switch(cs) {
+-			case 0:
+-				flash->ahb_base = priv->ahb_base;
+-				debug("cs0 mem-map : %x\n", (u32)flash->ahb_base);
+-				break;
+-			case 1:
+-				flash->ahb_base = priv->flashes[0].ahb_base + 0x4000000; /* cs0 + 64MB */
+-				debug("cs1 mem-map : %x end %x\n",
+-				      (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
+-				break;
+-			case 2:
+-				flash->ahb_base = priv->flashes[0].ahb_base + 0x4000000 * 2; /* cs0 + 128MB : use 64MB */
+-				debug("cs2 mem-map : %x end %x\n",
+-				      (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
+-				break;
++
++                               case 0:
++                                        flash->ahb_base = cs ? (void *)G6_SEGMENT_ADDR_START(seg_addr) :
++                                                priv->ahb_base;
++                                        debug("cs0 mem-map : %x \n", (u32)flash->ahb_base);
++                                        break;
++                                case 1:
++                                        flash->ahb_base = priv->flashes[0].ahb_base + 0x8000000;        //cs0 + 128Mb : use 64MB
++                                        debug("cs1 mem-map : %x end %x \n", (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
++                                        addr_config = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000); //add 512Mb
++                                        writel(addr_config, &priv->regs->segment_addr[cs]);
++                                        break;
++                                case 2:
++                                        flash->ahb_base = priv->flashes[0].ahb_base + 0xc000000;        //cs0 + 192Mb : use 64MB
++                                        debug("cs2 mem-map : %x end %x \n", (u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
++                                        addr_config = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000); //add 512Mb
++                                        writel(addr_config, &priv->regs->segment_addr[cs]);
++                                       break;
++
+ 			}
+-			addr_config =
+-				G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base, (u32)flash->ahb_base + 0x4000000);
+-			writel(addr_config, &priv->regs->segment_addr[cs]);
+ 			flash->cs = cs;
+ 			flash->ce_ctrl_user = CE_CTRL_USERMODE;
+ 			flash->ce_ctrl_fread = CE_CTRL_READMODE;
+@@ -1577,11 +1580,6 @@ static int aspeed_spi_flash_set_segment(struct aspeed_spi_priv *priv,
+ 					struct aspeed_spi_flash *flash)
+ {
+ 	u32 seg_addr;
+-	u32 decode_sz_arr[ASPEED_SPI_MAX_CS];
+-	u32 reg_val;
+-	u32 cs;
+-	u32 total_decode_sz = 0;
+-	u32 cur_offset = 0;
+ 
+ 	/* could be configured through the device tree */
+ 	flash->ahb_size = flash->spi->size;
+@@ -1591,51 +1589,14 @@ static int aspeed_spi_flash_set_segment(struct aspeed_spi_priv *priv,
+ 			flash->ahb_size = priv->ahb_size / priv->num_cs;
+ 			flash->ahb_size &= 0xffe00000;
+ 		}
++               seg_addr = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
++                                               (u32)flash->ahb_base + flash->ahb_size);
+ 
+-		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++) {
+-			reg_val = readl(&priv->regs->segment_addr[cs]);
+-			if (reg_val != 0 &&
+-			    G6_SEGMENT_ADDR_END(reg_val) > G6_SEGMENT_ADDR_START(reg_val)) {
+-				decode_sz_arr[cs] =
+-					G6_SEGMENT_ADDR_END(reg_val) - G6_SEGMENT_ADDR_START(reg_val);
+-			} else {
+-				decode_sz_arr[cs] = 0;
+-			}
+-		}
+-
+-		decode_sz_arr[flash->cs] = flash->ahb_size;
+-		aspeed_g6_adjust_decode_sz(decode_sz_arr, flash->cs + 1);
+-
+-		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++)
+-			total_decode_sz += decode_sz_arr[cs];
+-
+-		if (total_decode_sz > priv->ahb_size) {
+-			printf("err: Total decoded size, 0x%x, is too large.\n", total_decode_sz);
+-			return -ENOMEM;
+-		}
+-
+-		for (cs = 0; cs < ASPEED_SPI_MAX_CS; cs++) {
+-			struct aspeed_spi_flash *flash = &priv->flashes[cs];
+-
+-			flash->ahb_base = (void __iomem *)((u32)priv->ahb_base + cur_offset);
+-
+-			if (decode_sz_arr[cs] != 0) {
+-				seg_addr = G6_SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
+-								 (u32)flash->ahb_base + decode_sz_arr[cs]);
+-			} else {
+-				seg_addr = 0;
+-			}
+-
+-			writel(seg_addr, &priv->regs->segment_addr[cs]);
+-			flash->ahb_size = decode_sz_arr[cs];
+-			cur_offset += decode_sz_arr[cs];
+-		}
+ 	} else {
+ 		seg_addr = SEGMENT_ADDR_VALUE((u32)flash->ahb_base,
+ 						  (u32)flash->ahb_base + flash->ahb_size);
+-		writel(seg_addr, &priv->regs->segment_addr[flash->cs]);
+ 	}
+-
++writel(seg_addr, &priv->regs->segment_addr[flash->cs]);
+ 	return 0;
+ }
+ 
+-- 
+2.43.2
+

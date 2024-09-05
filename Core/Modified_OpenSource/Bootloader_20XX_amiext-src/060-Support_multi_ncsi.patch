@@ -1,0 +1,21 @@
+diff -Naur uboot-ori/drivers/net/ftgmac100.c uboot/drivers/net/ftgmac100.c
+--- uboot-ori/drivers/net/ftgmac100.c	2022-07-29 15:54:07.876050707 +0800
++++ uboot/drivers/net/ftgmac100.c	2022-07-29 15:59:13.665194912 +0800
+@@ -664,14 +664,14 @@
+ 			if(pdata->iobase == ftgmac100_mac_register[i])
+ 				break;
+ 		}
+-#ifdef CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC3
++#if defined CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC3 || defined(CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC3_MULTI)	
+ 		if ( i == 2 ){
+ 			printf("\nUse NCSI Interface :");
+ 			ncsi = 1;
+ 		}
+ #endif 		
+ 	
+-#ifdef CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC4
++#if defined CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC4 || defined(CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC4_MULTI)	
+ 		if ( i == 3 ){
+ 			printf("\nUse NCSI Interface :");
+ 			ncsi = 1;
+

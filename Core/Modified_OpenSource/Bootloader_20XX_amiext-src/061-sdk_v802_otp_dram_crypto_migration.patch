@@ -1,0 +1,2404 @@
+diff -Naur  uboot_org/cmd/Kconfig uboot/cmd/Kconfig
+--- uboot_org/cmd/Kconfig	2020-11-20 17:00:27.000000000 +0800
++++ uboot/cmd/Kconfig	2022-08-08 17:12:19.722756868 +0800
+@@ -617,6 +617,12 @@
+ config CMD_OTP
+ 	depends on ASPEED_AST2600
+         bool "ASPEED otp program"
++	select SHA512_ALGO
++	select SHA512
++	select SHA384
++	select SHA256
++	select RSA
++	select ASPEED_ACRY
+         default y
+ 
+ config CMD_RNG
+diff -Naur  uboot_org/cmd/otp.c uboot/cmd/otp.c
+--- uboot_org/cmd/otp.c	2022-07-25 16:07:49.372618423 +0800
++++ uboot/cmd/otp.c	2022-08-08 17:12:19.730756790 +0800
+@@ -15,12 +15,17 @@
+ #include <mapmem.h>
+ #include <asm/io.h>
+ #include <linux/compiler.h>
++#include <linux/iopoll.h>
+ #include <u-boot/sha256.h>
++#include <u-boot/sha512.h>
++#include <u-boot/rsa.h>
++#include <u-boot/rsa-mod-exp.h>
++#include <dm.h>
+ #include "otp_info.h"
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+-#define OTP_VER				"1.2.0"
++#define OTP_VER				"2.0.0"
+ 
+ #define OTP_PASSWD			0x349fe38a
+ #define RETRY				20
+@@ -40,6 +45,9 @@
+ #define OTP_KEY_TYPE_VAULT		4
+ #define OTP_KEY_TYPE_HMAC		5
+ 
++#define OTP_LIT_END			0
++#define OTP_BIG_END			1
++
+ #define OTP_BASE		0x1e6f2000
+ #define OTP_PROTECT_KEY		OTP_BASE
+ #define OTP_COMMAND		OTP_BASE + 0x4
+@@ -55,7 +63,7 @@
+ #define SEC_KEY_NUM		OTP_BASE + 0x78
+ 
+ #define OTP_MAGIC		"SOCOTP"
+-#define CHECKSUM_LEN		32
++#define CHECKSUM_LEN		64
+ #define OTP_INC_DATA		BIT(31)
+ #define OTP_INC_CONFIG		BIT(30)
+ #define OTP_INC_STRAP		BIT(29)
+@@ -102,7 +110,7 @@
+ #define OTPTOOL_VERSION_MAJOR(x) (((x) >> 24) & 0xff)
+ #define OTPTOOL_VERSION_PATCHLEVEL(x) (((x) >> 12) & 0xfff)
+ #define OTPTOOL_VERSION_SUBLEVEL(x) ((x) & 0xfff)
+-#define OTPTOOL_COMPT_VERSION 1
++#define OTPTOOL_COMPT_VERSION 2
+ 
+ struct otp_header {
+ 	u8	otp_magic[8];
+@@ -127,6 +135,7 @@
+ struct otpkey_type {
+ 	int value;
+ 	int key_type;
++	int order;
+ 	int need_id;
+ 	char information[110];
+ };
+@@ -171,44 +180,72 @@
+ 	u8 *scu_pro_ignore;
+ };
+ 
++struct sb_info {
++	int header_offset;
++	int secure_region;
++	int rsa_algo;
++	int sha_algo;
++	int digest_len;
++	int retire_list[8];
++	int enc_flag;
++};
++
++struct key_list {
++	const struct otpkey_type *key_info;
++	int offset;
++	int id;
++	int retire;
++};
++
++struct sb_header {
++	u32 aes_data_offset;
++	u32 enc_offset;
++	u32 sign_image_size;
++	u32 signature_offset;
++	u32 revision_low;
++	u32 revision_high;
++	u32 reserved;
++	u32 bl1_header_checksum;
++};
++
+ static struct otp_info_cb info_cb;
+ 
+ static const struct otpkey_type a0_key_type[] = {
+-	{0, OTP_KEY_TYPE_AES,   0, "AES-256 as OEM platform key for image encryption/decryption"},
+-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
+-	{4, OTP_KEY_TYPE_HMAC,  1, "HMAC as encrypted OEM HMAC keys in Mode 1"},
+-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
+-	{9, OTP_KEY_TYPE_RSA_PUB,   0, "RSA-public as SOC public key"},
+-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
+-	{13, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as SOC private key"},
+-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
++	{0, OTP_KEY_TYPE_AES,       OTP_LIT_END, 0, "AES-256 as OEM platform key for image encryption/decryption"},
++	{1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0, "AES-256 as secret vault key"},
++	{4, OTP_KEY_TYPE_HMAC,      OTP_LIT_END, 1, "HMAC as encrypted OEM HMAC keys in Mode 1"},
++	{8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1, "RSA-public as OEM DSS public keys in Mode 2"},
++	{9, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 0, "RSA-public as SOC public key"},
++	{10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0, "RSA-public as AES key decryption key"},
++	{13, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0, "RSA-private as SOC private key"},
++	{14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0, "RSA-private as AES key decryption key"},
+ };
+ 
+ static const struct otpkey_type a1_key_type[] = {
+-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
+-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
+-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
+-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
+-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
++	{1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0, "AES-256 as secret vault key"},
++	{2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
++	{8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1, "RSA-public as OEM DSS public keys in Mode 2"},
++	{10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0, "RSA-public as AES key decryption key"},
++	{14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0, "RSA-private as AES key decryption key"},
+ };
+ 
+ static const struct otpkey_type a2_key_type[] = {
+-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
+-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
+-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
+-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
+-	{14, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
++	{1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0, "AES-256 as secret vault key"},
++	{2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
++	{8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1, "RSA-public as OEM DSS public keys in Mode 2"},
++	{10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0, "RSA-public as AES key decryption key"},
++	{14, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0, "RSA-private as AES key decryption key"},
+ };
+ 
+ static const struct otpkey_type a3_key_type[] = {
+-	{1, OTP_KEY_TYPE_VAULT, 0, "AES-256 as secret vault key"},
+-	{2, OTP_KEY_TYPE_AES,   1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
+-	{8, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2"},
+-	{9, OTP_KEY_TYPE_RSA_PUB,   1, "RSA-public as OEM DSS public keys in Mode 2(big endian)"},
+-	{10, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key"},
+-	{11, OTP_KEY_TYPE_RSA_PUB,  0, "RSA-public as AES key decryption key(big endian)"},
+-	{12, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key"},
+-	{13, OTP_KEY_TYPE_RSA_PRIV,  0, "RSA-private as AES key decryption key(big endian)"},
++	{1, OTP_KEY_TYPE_VAULT,     OTP_LIT_END, 0, "AES-256 as secret vault key"},
++	{2, OTP_KEY_TYPE_AES,       OTP_LIT_END, 1, "AES-256 as OEM platform key for image encryption/decryption in Mode 2 or AES-256 as OEM DSS keys for Mode GCM"},
++	{8, OTP_KEY_TYPE_RSA_PUB,   OTP_LIT_END, 1, "RSA-public as OEM DSS public keys in Mode 2"},
++	{9, OTP_KEY_TYPE_RSA_PUB,   OTP_BIG_END, 1, "RSA-public as OEM DSS public keys in Mode 2(big endian)"},
++	{10, OTP_KEY_TYPE_RSA_PUB,  OTP_LIT_END, 0, "RSA-public as AES key decryption key"},
++	{11, OTP_KEY_TYPE_RSA_PUB,  OTP_BIG_END, 0, "RSA-public as AES key decryption key(big endian)"},
++	{12, OTP_KEY_TYPE_RSA_PRIV, OTP_LIT_END, 0, "RSA-private as AES key decryption key"},
++	{13, OTP_KEY_TYPE_RSA_PRIV, OTP_BIG_END, 0, "RSA-private as AES key decryption key(big endian)"},
+ };
+ 
+ static void buf_print(u8 *buf, int len)
+@@ -268,6 +305,33 @@
+ 	return rid_num;
+ }
+ 
++static void sb_sha256(u8 *src, u32 len, u8 *digest_ret)
++{
++	sha256_context ctx;
++
++	sha256_starts(&ctx);
++	sha256_update(&ctx, src, len);
++	sha256_finish(&ctx, digest_ret);
++}
++
++static void sb_sha384(u8 *src, u32 len, u8 *digest_ret)
++{
++	sha512_context ctx;
++
++	sha384_starts(&ctx);
++	sha384_update(&ctx, src, len);
++	sha384_finish(&ctx, digest_ret);
++}
++
++static void sb_sha512(u8 *src, u32 len, u8 *digest_ret)
++{
++	sha512_context ctx;
++
++	sha512_starts(&ctx);
++	sha512_update(&ctx, src, len);
++	sha512_finish(&ctx, digest_ret);
++}
++
+ static u32 chip_version(void)
+ {
+ 	u32 revid0, revid1;
+@@ -309,13 +373,17 @@
+ 	return OTP_FAILURE;
+ }
+ 
+-static void wait_complete(void)
++static int wait_complete(void)
+ {
+-	int reg;
++	u32 val;
++	int ret;
++
++	udelay(1);
++	ret = readl_poll_timeout(OTP_STATUS, val, (val & 0x6) == 0x6, 100000);
++	if (ret)
++		printf("%s: timeout, SEC14 = 0x%x\n", __func__, val);
+ 
+-	do {
+-		reg = readl(OTP_STATUS);
+-	} while ((reg & 0x6) != 0x6);
++	return ret;
+ }
+ 
+ static void otp_write(u32 otp_addr, u32 data)
+@@ -499,16 +567,17 @@
+ 	}
+ }
+ 
+-static void otp_prog(u32 otp_addr, u32 prog_bit)
++static int otp_prog(u32 otp_addr, u32 prog_bit)
+ {
+ 	otp_write(0x0, prog_bit);
+ 	writel(otp_addr, OTP_ADDR); //write address
+ 	writel(prog_bit, OTP_COMPARE_1); //write data
+ 	writel(0x23b1e364, OTP_COMMAND); //write command
+-	wait_complete();
++
++	return wait_complete();
+ }
+ 
+-static void _otp_prog_bit(u32 value, u32 prog_address, u32 bit_offset)
++static int _otp_prog_bit(u32 value, u32 prog_address, u32 bit_offset)
+ {
+ 	int prog_bit;
+ 
+@@ -516,31 +585,36 @@
+ 		if (value)
+ 			prog_bit = ~(0x1 << bit_offset);
+ 		else
+-			return;
++			return 0;
+ 	} else {
+ 		if (info_cb.version != OTP_A3)
+ 			prog_address |= 1 << 15;
+ 		if (!value)
+ 			prog_bit = 0x1 << bit_offset;
+ 		else
+-			return;
++			return 0;
+ 	}
+-	otp_prog(prog_address, prog_bit);
++	return otp_prog(prog_address, prog_bit);
+ }
+ 
+ static int otp_prog_dc_b(u32 value, u32 prog_address, u32 bit_offset)
+ {
+ 	int pass;
+ 	int i;
++	int ret;
+ 
+ 	otp_soak(1);
+-	_otp_prog_bit(value, prog_address, bit_offset);
++	ret = _otp_prog_bit(value, prog_address, bit_offset);
++	if (ret)
++		return OTP_FAILURE;
+ 	pass = 0;
+ 
+ 	for (i = 0; i < RETRY; i++) {
+ 		if (verify_bit(prog_address, bit_offset, value) != 0) {
+ 			otp_soak(2);
+-			_otp_prog_bit(value, prog_address, bit_offset);
++			ret = _otp_prog_bit(value, prog_address, bit_offset);
++			if (ret)
++				return OTP_FAILURE;
+ 			if (verify_bit(prog_address, bit_offset, value) != 0) {
+ 				otp_soak(1);
+ 			} else {
+@@ -558,9 +632,10 @@
+ 	return OTP_FAILURE;
+ }
+ 
+-static void otp_prog_dw(u32 value, u32 ignore, u32 prog_address)
++static int otp_prog_dw(u32 value, u32 ignore, u32 prog_address)
+ {
+ 	int j, bit_value, prog_bit;
++	int ret;
+ 
+ 	for (j = 0; j < 32; j++) {
+ 		if ((ignore >> j) & 0x1)
+@@ -579,8 +654,11 @@
+ 			else
+ 				prog_bit = 0x1 << j;
+ 		}
+-		otp_prog(prog_address, prog_bit);
++		ret = otp_prog(prog_address, prog_bit);
++		if (ret)
++			return ret;
+ 	}
++	return 0;
+ }
+ 
+ static int otp_prog_verify_2dw(u32 *data, u32 *buf, u32 *ignore_mask, u32 prog_address)
+@@ -592,6 +670,7 @@
+ 	u32 buf0_masked;
+ 	u32 buf1_masked;
+ 	u32 compare[2];
++	int ret;
+ 
+ 	data0_masked = data[0]  & ~ignore_mask[0];
+ 	buf0_masked  = buf[0] & ~ignore_mask[0];
+@@ -608,19 +687,32 @@
+ 	}
+ 
+ 	otp_soak(1);
+-	if (data0_masked != buf0_masked)
+-		otp_prog_dw(buf[0], ignore_mask[0], prog_address);
+-	if (data1_masked != buf1_masked)
+-		otp_prog_dw(buf[1], ignore_mask[1], prog_address + 1);
++	if (data0_masked != buf0_masked) {
++		ret = otp_prog_dw(buf[0], ignore_mask[0], prog_address);
++		if (ret)
++			return OTP_FAILURE;
++	}
++
++	if (data1_masked != buf1_masked) {
++		ret = otp_prog_dw(buf[1], ignore_mask[1], prog_address + 1);
++		if (ret)
++			return OTP_FAILURE;
++	}
+ 
+ 	pass = 0;
+ 	for (i = 0; i < RETRY; i++) {
+ 		if (verify_dw(prog_address, buf, ignore_mask, compare, 2) != 0) {
+ 			otp_soak(2);
+-			if (compare[0] != 0)
+-				otp_prog_dw(compare[0], ignore_mask[0], prog_address);
+-			if (compare[1] != ~0)
+-				otp_prog_dw(compare[1], ignore_mask[1], prog_address + 1);
++			if (compare[0] != 0) {
++				ret = otp_prog_dw(compare[0], ignore_mask[0], prog_address);
++				if (ret)
++					return OTP_FAILURE;
++			}
++			if (compare[1] != ~0) {
++				ret = otp_prog_dw(compare[1], ignore_mask[1], prog_address + 1);
++				if (ret)
++					return OTP_FAILURE;
++			}
+ 			if (verify_dw(prog_address, buf, ignore_mask, compare, 2) != 0) {
+ 				otp_soak(1);
+ 			} else {
+@@ -1299,13 +1391,119 @@
+ 	return OTP_SUCCESS;
+ }
+ 
+-static void _otp_print_key(u32 *data)
++static void _otp_print_key(u32 header, u32 offset, u8 *data)
+ {
+-	int i, j;
+-	int key_id, key_offset, last, key_type, key_length, exp_length;
+-	struct otpkey_type key_info;
+ 	const struct otpkey_type *key_info_array = info_cb.key_info;
++	struct otpkey_type key_info;
++	int key_id, key_offset, key_type, key_length, exp_length;
+ 	int len = 0;
++	int i;
++
++	key_id = header & 0x7;
++	key_offset = header & 0x1ff8;
++	key_type = (header >> 14) & 0xf;
++	key_length = (header >> 18) & 0x3;
++	exp_length = (header >> 20) & 0xfff;
++
++	printf("\nKey[%d]:\n", offset);
++	printf("Header: %x\n", header);
++
++	key_info.value = -1;
++	for (i = 0; i < info_cb.key_info_len; i++) {
++		if (key_type == key_info_array[i].value) {
++			key_info = key_info_array[i];
++			break;
++		}
++	}
++	if (key_info.value == -1)
++		return;
++
++	printf("Key Type: ");
++	printf("%s\n", key_info.information);
++
++	if (key_info.key_type == OTP_KEY_TYPE_HMAC) {
++		printf("HMAC SHA Type: ");
++		switch (key_length) {
++		case 0:
++			printf("HMAC(SHA224)\n");
++			break;
++		case 1:
++			printf("HMAC(SHA256)\n");
++			break;
++		case 2:
++			printf("HMAC(SHA384)\n");
++			break;
++		case 3:
++			printf("HMAC(SHA512)\n");
++			break;
++		}
++	} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PRIV ||
++		   key_info.key_type == OTP_KEY_TYPE_RSA_PUB) {
++		printf("RSA SHA Type: ");
++		switch (key_length) {
++		case 0:
++			printf("RSA1024\n");
++			len = 0x100;
++			break;
++		case 1:
++			printf("RSA2048\n");
++			len = 0x200;
++			break;
++		case 2:
++			printf("RSA3072\n");
++			len = 0x300;
++			break;
++		case 3:
++			printf("RSA4096\n");
++			len = 0x400;
++			break;
++		}
++		printf("RSA exponent bit length: %d\n", exp_length);
++	}
++	if (key_info.need_id)
++		printf("Key Number ID: %d\n", key_id);
++	if (!data)
++		return;
++	printf("Key Value:\n");
++	if (key_info.key_type == OTP_KEY_TYPE_HMAC) {
++		buf_print(&data[key_offset], 0x40);
++	} else if (key_info.key_type == OTP_KEY_TYPE_AES) {
++		printf("AES Key:\n");
++		buf_print(&data[key_offset], 0x20);
++		if (info_cb.version == OTP_A0) {
++			printf("AES IV:\n");
++			buf_print(&data[key_offset + 0x20], 0x10);
++		}
++
++	} else if (key_info.key_type == OTP_KEY_TYPE_VAULT) {
++		if (info_cb.version == OTP_A0) {
++			printf("AES Key:\n");
++			buf_print(&data[key_offset], 0x20);
++			printf("AES IV:\n");
++			buf_print(&data[key_offset + 0x20], 0x10);
++		} else {
++			printf("AES Key 1:\n");
++			buf_print(&data[key_offset], 0x20);
++			printf("AES Key 2:\n");
++			buf_print(&data[key_offset + 0x20], 0x20);
++		}
++	} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PRIV) {
++		printf("RSA mod:\n");
++		buf_print(&data[key_offset], len / 2);
++		printf("RSA exp:\n");
++		buf_print(&data[key_offset + (len / 2)], len / 2);
++	} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PUB) {
++		printf("RSA mod:\n");
++		buf_print(&data[key_offset], len / 2);
++		printf("RSA exp:\n");
++		buf_print((u8 *)"\x01\x00\x01", 3);
++	}
++}
++
++static void otp_print_key(u32 *data)
++{
++	int i;
++	int last;
+ 	u8 *byte_buf;
+ 	int empty;
+ 
+@@ -1327,102 +1525,8 @@
+ 	}
+ 
+ 	for (i = 0; i < 16; i++) {
+-		key_id = data[i] & 0x7;
+-		key_offset = data[i] & 0x1ff8;
+ 		last = (data[i] >> 13) & 1;
+-		key_type = (data[i] >> 14) & 0xf;
+-		key_length = (data[i] >> 18) & 0x3;
+-		exp_length = (data[i] >> 20) & 0xfff;
+-
+-		key_info.value = -1;
+-		for (j = 0; j < info_cb.key_info_len; j++) {
+-			if (key_type == key_info_array[j].value) {
+-				key_info = key_info_array[j];
+-				break;
+-			}
+-		}
+-		if (key_info.value == -1)
+-			break;
+-
+-		printf("\nKey[%d]:\n", i);
+-		printf("Key Type: ");
+-		printf("%s\n", key_info.information);
+-
+-		if (key_info.key_type == OTP_KEY_TYPE_HMAC) {
+-			printf("HMAC SHA Type: ");
+-			switch (key_length) {
+-			case 0:
+-				printf("HMAC(SHA224)\n");
+-				break;
+-			case 1:
+-				printf("HMAC(SHA256)\n");
+-				break;
+-			case 2:
+-				printf("HMAC(SHA384)\n");
+-				break;
+-			case 3:
+-				printf("HMAC(SHA512)\n");
+-				break;
+-			}
+-		} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PRIV ||
+-			   key_info.key_type == OTP_KEY_TYPE_RSA_PUB) {
+-			printf("RSA SHA Type: ");
+-			switch (key_length) {
+-			case 0:
+-				printf("RSA1024\n");
+-				len = 0x100;
+-				break;
+-			case 1:
+-				printf("RSA2048\n");
+-				len = 0x200;
+-				break;
+-			case 2:
+-				printf("RSA3072\n");
+-				len = 0x300;
+-				break;
+-			case 3:
+-				printf("RSA4096\n");
+-				len = 0x400;
+-				break;
+-			}
+-			printf("RSA exponent bit length: %d\n", exp_length);
+-		}
+-		if (key_info.need_id)
+-			printf("Key Number ID: %d\n", key_id);
+-		printf("Key Value:\n");
+-		if (key_info.key_type == OTP_KEY_TYPE_HMAC) {
+-			buf_print(&byte_buf[key_offset], 0x40);
+-		} else if (key_info.key_type == OTP_KEY_TYPE_AES) {
+-			printf("AES Key:\n");
+-			buf_print(&byte_buf[key_offset], 0x20);
+-			if (info_cb.version == OTP_A0) {
+-				printf("AES IV:\n");
+-				buf_print(&byte_buf[key_offset + 0x20], 0x10);
+-			}
+-
+-		} else if (key_info.key_type == OTP_KEY_TYPE_VAULT) {
+-			if (info_cb.version == OTP_A0) {
+-				printf("AES Key:\n");
+-				buf_print(&byte_buf[key_offset], 0x20);
+-				printf("AES IV:\n");
+-				buf_print(&byte_buf[key_offset + 0x20], 0x10);
+-			} else {
+-				printf("AES Key 1:\n");
+-				buf_print(&byte_buf[key_offset], 0x20);
+-				printf("AES Key 2:\n");
+-				buf_print(&byte_buf[key_offset + 0x20], 0x20);
+-			}
+-		} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PRIV) {
+-			printf("RSA mod:\n");
+-			buf_print(&byte_buf[key_offset], len / 2);
+-			printf("RSA exp:\n");
+-			buf_print(&byte_buf[key_offset + (len / 2)], len / 2);
+-		} else if (key_info.key_type == OTP_KEY_TYPE_RSA_PUB) {
+-			printf("RSA mod:\n");
+-			buf_print(&byte_buf[key_offset], len / 2);
+-			printf("RSA exp:\n");
+-			buf_print((u8 *)"\x01\x00\x01", 3);
+-		}
++		_otp_print_key(data[i], i, byte_buf);
+ 		if (last)
+ 			break;
+ 	}
+@@ -1433,7 +1537,7 @@
+ 	u32 *buf;
+ 
+ 	buf = (u32 *)image_layout->data;
+-	_otp_print_key(buf);
++	otp_print_key(buf);
+ 
+ 	return OTP_SUCCESS;
+ }
+@@ -1446,7 +1550,7 @@
+ 	for (i = 0; i < 2048 ; i += 2)
+ 		otp_read_data(i, &data[i]);
+ 
+-	_otp_print_key(data);
++	otp_print_key(data);
+ }
+ 
+ static int otp_prog_data(struct otp_image_layout *image_layout, u32 *data)
+@@ -1567,6 +1671,7 @@
+ 	u32 *conf_ignore = (u32 *)image_layout->conf_ignore;
+ 	u32 data_masked;
+ 	u32 buf_masked;
++	int ret;
+ 
+ 	printf("Start Programing...\n");
+ 	otp_soak(0);
+@@ -1582,13 +1687,17 @@
+ 		}
+ 
+ 		otp_soak(1);
+-		otp_prog_dw(conf[i], conf_ignore[i], prog_address);
++		ret = otp_prog_dw(conf[i], conf_ignore[i], prog_address);
++		if (ret)
++			return OTP_FAILURE;
+ 
+ 		pass = 0;
+ 		for (k = 0; k < RETRY; k++) {
+ 			if (verify_dw(prog_address, &conf[i], &conf_ignore[i], compare, 1) != 0) {
+ 				otp_soak(2);
+-				otp_prog_dw(compare[0], conf_ignore[i], prog_address);
++				ret = otp_prog_dw(compare[0], conf_ignore[i], prog_address);
++				if (ret)
++					return OTP_FAILURE;
+ 				if (verify_dw(prog_address, &conf[i], &conf_ignore[i], compare, 1) != 0) {
+ 					otp_soak(1);
+ 				} else {
+@@ -1624,6 +1733,7 @@
+ 	u32 *OTPSCU_IGNORE = (u32 *)image_layout->scu_pro_ignore;
+ 	u32 data_masked;
+ 	u32 buf_masked;
++	int ret;
+ 
+ 	printf("Start Programing...\n");
+ 	otp_soak(0);
+@@ -1637,13 +1747,16 @@
+ 		}
+ 
+ 		otp_soak(1);
+-		otp_prog_dw(OTPSCU[i], OTPSCU_IGNORE[i], prog_address);
+-
++		ret = otp_prog_dw(OTPSCU[i], OTPSCU_IGNORE[i], prog_address);
++		if (ret)
++			return OTP_FAILURE;
+ 		pass = 0;
+ 		for (k = 0; k < RETRY; k++) {
+ 			if (verify_dw(prog_address, &OTPSCU[i], &OTPSCU_IGNORE[i], compare, 1) != 0) {
+ 				otp_soak(2);
+-				otp_prog_dw(compare[0], OTPSCU_IGNORE[i], prog_address);
++				ret = otp_prog_dw(compare[0], OTPSCU_IGNORE[i], prog_address);
++				if (ret)
++					return OTP_FAILURE;
+ 				if (verify_dw(prog_address, &OTPSCU[i], &OTPSCU_IGNORE[i], compare, 1) != 0) {
+ 					otp_soak(1);
+ 				} else {
+@@ -1799,16 +1912,25 @@
+ 	return OTP_SUCCESS;
+ }
+ 
+-static int otp_verify_image(u8 *src_buf, u32 length, u8 *digest_buf)
++static int otp_verify_image(u8 *src_buf, u32 length, u8 *digest_buf, int version)
+ {
+-	sha256_context ctx;
+-	u8 digest_ret[CHECKSUM_LEN];
++	u8 digest_ret[48];
++	int digest_len;
+ 
+-	sha256_starts(&ctx);
+-	sha256_update(&ctx, src_buf, length);
+-	sha256_finish(&ctx, digest_ret);
++	switch (version) {
++	case 1:
++		sb_sha256(src_buf, length, digest_ret);
++		digest_len = 32;
++		break;
++	case 2:
++		sb_sha384(src_buf, length, digest_ret);
++		digest_len = 48;
++		break;
++	default:
++		return OTP_FAILURE;
++	}
+ 
+-	if (!memcmp(digest_buf, digest_ret, CHECKSUM_LEN))
++	if (!memcmp(digest_buf, digest_ret, digest_len))
+ 		return OTP_SUCCESS;
+ 	return OTP_FAILURE;
+ }
+@@ -1886,12 +2008,21 @@
+ 		return OTP_FAILURE;
+ 	}
+ 
+-	if (OTPTOOL_VERSION_MAJOR(otp_header->otptool_ver) != OTPTOOL_COMPT_VERSION) {
+-		printf("OTP image is not generated by otptool v1.x.x\n");
++	switch (OTPTOOL_VERSION_MAJOR(otp_header->otptool_ver)) {
++	case 1:
++		printf("WARNING: OTP image is not generated by otptool v2.x.x\n");
++		printf("Please use the latest version of otptool to generate OTP image\n");
++		ret = otp_verify_image(buf, image_size, checksum, 1);
++		break;
++	case 2:
++		ret = otp_verify_image(buf, image_size, checksum, 2);
++		break;
++	default:
++		printf("OTP image version is not supported\n");
+ 		return OTP_FAILURE;
+ 	}
+ 
+-	if (otp_verify_image(buf, image_size, checksum)) {
++	if (ret) {
+ 		printf("checksum is invalid\n");
+ 		return OTP_FAILURE;
+ 	}
+@@ -2301,6 +2432,353 @@
+ 	return OTP_FAILURE;
+ }
+ 
++static int parse_config(struct sb_info *si)
++{
++	int i;
++	u32 cfg0, cfg3, cfg4;
++	u32 sb_mode;
++	u32 key_retire;
++	u32 rsa_len;
++	u32 sha_len;
++
++	otp_read_conf(0, &cfg0);
++	otp_read_conf(3, &cfg3);
++	otp_read_conf(4, &cfg4);
++
++	sb_mode = (cfg0 >> 7) & 0x1;
++	si->enc_flag = (cfg0 >> 27) & 0x1;
++	key_retire = (cfg4 & 0x7f) | ((cfg4 >> 16) & 0x7f);
++
++	if ((cfg0 >> 16) & 0x3f)
++		si->secure_region = 1;
++	else
++		si->secure_region = 0;
++
++	si->header_offset = cfg3 & 0xffff;
++	if (si->header_offset == 0)
++		si->header_offset = 0x20;
++
++	for (i = 0; i < 8; i++) {
++		if ((key_retire >> i) & 0x1)
++			si->retire_list[i] = 1;
++		else
++			si->retire_list[i] = 0;
++	}
++
++	if (sb_mode == 0) {
++		printf("Mode GCM is not supported.\n");
++		return OTP_FAILURE;
++	}
++
++	if (si->enc_flag)
++		printf("Algorithm: AES_RSA_SHA\n");
++	else
++		printf("Algorithm: RSA_SHA\n");
++
++	rsa_len = (cfg0 >> 10) & 0x3;
++	sha_len = (cfg0 >> 12) & 0x3;
++
++	if (rsa_len == 0) {
++		si->rsa_algo = 1024;
++		printf("RSA length: 1024\n");
++	} else if (rsa_len == 1) {
++		si->rsa_algo = 2048;
++		printf("RSA length: 2048\n");
++	} else if (rsa_len == 2) {
++		si->rsa_algo = 3072;
++		printf("RSA length: 3072\n");
++	} else {
++		si->rsa_algo = 4096;
++		printf("RSA length: 4096\n");
++	}
++	if (sha_len == 0) {
++		si->sha_algo = 224;
++		si->digest_len = 28;
++		printf("HASH length: 224\n");
++	} else if (sha_len == 1) {
++		si->sha_algo = 256;
++		si->digest_len = 32;
++		printf("HASH length: 256\n");
++	} else if (sha_len == 2) {
++		si->sha_algo = 384;
++		si->digest_len = 48;
++		printf("HASH length: 384\n");
++	} else {
++		si->sha_algo = 512;
++		si->digest_len = 64;
++		printf("HASH length: 512\n");
++	}
++	return OTP_SUCCESS;
++}
++
++static void parse_data(struct key_list *kl, int *key_num, struct sb_info *si, u32 *data)
++{
++	const struct otpkey_type *key_info_array = info_cb.key_info;
++	int i, j;
++	int id = 0;
++	u32 h;
++	u32 t;
++
++	*key_num = 0;
++	for (i = 0; i < 16; i++) {
++		h = data[i];
++		t = (h >> 14) & 0xf;
++		for (j = 0; j < info_cb.key_info_len; j++) {
++			if (t == key_info_array[j].value) {
++				kl[*key_num].key_info = &key_info_array[j];
++				kl[*key_num].offset = h & 0x1ff8;
++				id = h & 0x7;
++				kl[*key_num].id = id;
++				if (si->retire_list[id] == 1)
++					kl[*key_num].retire = 1;
++				else
++					kl[*key_num].retire = 0;
++				(*key_num)++;
++				break;
++			}
++		}
++		if ((data[i] >> 13) & 1)
++			break;
++	}
++}
++
++static int sb_sha(struct sb_info *si, u8 *sec_image, u32 sign_image_size, u8 *digest_ret)
++{
++	switch (si->sha_algo) {
++	case 224:
++		printf("otp verify does not support SHA224\n");
++		return OTP_FAILURE;
++	case 256:
++		sb_sha256(sec_image, sign_image_size, digest_ret);
++		break;
++	case 384:
++		sb_sha384(sec_image, sign_image_size, digest_ret);
++		break;
++	case 512:
++		sb_sha512(sec_image, sign_image_size, digest_ret);
++		break;
++	default:
++		printf("SHA Algorithm is invalid\n");
++		return OTP_FAILURE;
++	}
++	return 0;
++}
++
++static int mode2_verify(u8 *sec_image, u32 sign_image_size,
++			u8 *signature, u8 *rsa_m,
++			int order, u8 *digest,
++			struct sb_info *si, struct udevice *mod_exp_dev)
++{
++	struct key_prop prop;
++	u8 rsa_e[3] = "\x01\x00\x01";
++	u8 sign_ret[512];
++	u8 rsa_m_rev[512];
++	u8 signature_rev[512];
++	u8 tmp;
++	u32 rsa_len = si->rsa_algo / 8;
++	int i;
++	int ret;
++
++	memset(&prop, 0, sizeof(struct key_prop));
++
++	if (order == OTP_LIT_END) {
++		memset(rsa_m_rev, 0, 512);
++		memset(signature_rev, 0, 512);
++		for (i = 0; i < rsa_len; i++) {
++			rsa_m_rev[i] = rsa_m[rsa_len - 1 - i];
++			signature_rev[i] = signature[rsa_len - 1 - i];
++		}
++		prop.modulus = rsa_m_rev;
++		prop.num_bits = si->rsa_algo;
++		prop.public_exponent = rsa_e;
++		prop.exp_len = 3;
++		ret = rsa_mod_exp(mod_exp_dev, signature_rev, rsa_len, &prop, sign_ret);
++	} else {
++		prop.modulus = rsa_m;
++		prop.num_bits = si->rsa_algo;
++		prop.public_exponent = rsa_e;
++		prop.exp_len = 3;
++		ret = rsa_mod_exp(mod_exp_dev, signature, rsa_len, &prop, sign_ret);
++	}
++
++	if (ret) {
++		printf("rsa_mod_exp error: %d\n", ret);
++		return OTP_FAILURE;
++	}
++
++	if (order == OTP_LIT_END) {
++		for (i = 0; i < rsa_len / 2; i++) {
++			tmp = sign_ret[i];
++			sign_ret[i] = sign_ret[rsa_len - 1 - i];
++			sign_ret[rsa_len - 1 - i] = tmp;
++		}
++		ret = memcmp(digest, sign_ret, si->digest_len);
++	} else {
++		ret = memcmp(digest, sign_ret + (rsa_len - si->digest_len), si->digest_len);
++	}
++
++	if (ret)
++		return OTP_FAILURE;
++	return 0;
++}
++
++static int otp_verify_boot_image(phys_addr_t addr)
++{
++	struct udevice *mod_exp_dev;
++	struct sb_info si;
++	struct key_list kl[16];
++	struct sb_header *sh;
++	u32 data[2048];
++	u8 digest[64];
++	u8 *sec_image;
++	u8 *signature;
++	u8 *key;
++	u32 otp_rid[2];
++	u32 sw_rid[2];
++	u64 *otp_rid64 = (u64 *)otp_rid;
++	u64 *sw_rid64 = (u64 *)sw_rid;
++	int key_num;
++	int ret;
++	int i;
++	int pass = 0;
++
++	ret = uclass_get_device_by_driver(UCLASS_MOD_EXP, DM_GET_DRIVER(aspeed_acry), &mod_exp_dev);
++	if (ret) {
++		printf("RSA engine: Can't find aspeed_acry\n");
++		return OTP_FAILURE;
++	}
++
++	for (i = 0; i < 2048 ; i += 2)
++		otp_read_data(i, &data[i]);
++	if (parse_config(&si))
++		return OTP_FAILURE;
++	parse_data(kl, &key_num, &si, data);
++	otp_read_conf(10, &otp_rid[0]);
++	otp_read_conf(11, &otp_rid[1]);
++
++	sec_image = (u8 *)addr;
++	sh = (struct sb_header *)(sec_image + si.header_offset);
++	signature = sec_image + sh->signature_offset;
++
++	if (si.secure_region)
++		printf("WARNING: Secure Region is enabled, the verification may not correct.\n");
++
++	if (sh->sign_image_size % 512) {
++		printf("ERROR: The sign_image_size should be 512 bytes aligned\n");
++		return OTP_FAILURE;
++	}
++
++	printf("Check revision ID: ");
++
++	sw_rid[0] = sh->revision_low;
++	sw_rid[1] = sh->revision_high;
++
++	if (*otp_rid64 > *sw_rid64) {
++		printf("FAIL\n");
++		printf("Header revision_low:  %x\n", sh->revision_low);
++		printf("Header revision_high: %x\n", sh->revision_high);
++		printf("OTP revision_low:     %x\n", otp_rid[0]);
++		printf("OTP revision_high:    %x\n", otp_rid[1]);
++		return OTP_FAILURE;
++	}
++	printf("PASS\n");
++
++	printf("Check secure image header: ");
++	if (((sh->aes_data_offset + sh->enc_offset + sh->sign_image_size +
++	      sh->signature_offset + sh->revision_high + sh->revision_low +
++	      sh->reserved + sh->bl1_header_checksum) & 0xffffffff) != 0) {
++		printf("FAIL\n");
++		printf("aes_data_offset:     %x\n", sh->aes_data_offset);
++		printf("enc_offset:          %x\n", sh->enc_offset);
++		printf("sign_image_size:     %x\n", sh->sign_image_size);
++		printf("signature_offset:    %x\n", sh->signature_offset);
++		printf("revision_high:       %x\n", sh->revision_high);
++		printf("revision_low:        %x\n", sh->revision_low);
++		printf("reserved:            %x\n", sh->reserved);
++		printf("bl1_header_checksum: %x\n", sh->bl1_header_checksum);
++		return OTP_FAILURE;
++	}
++	printf("PASS\n");
++
++	ret = sb_sha(&si, sec_image, sh->sign_image_size, digest);
++	if (ret)
++		return OTP_FAILURE;
++
++	printf("Verifying secure image\n");
++	for (i = 0; i < key_num; i++) {
++		if (kl[i].key_info->key_type != OTP_KEY_TYPE_RSA_PUB)
++			continue;
++		printf(" Key %d\n", kl[i].id);
++		if (kl[i].retire) {
++			printf(" Key %d is retired.\n", kl[i].id);
++			continue;
++		}
++		key = (u8 *)data + kl[i].offset;
++		if (!mode2_verify(sec_image, sh->sign_image_size,
++				  signature, key, kl[i].key_info->order, digest,
++				  &si, mod_exp_dev)) {
++			pass = 1;
++			break;
++		}
++	}
++	if (pass) {
++		printf("  OEM DSS RSA public keys\n");
++		printf("  ID: %d\n", kl[i].id);
++		if (kl[i].key_info->order == OTP_BIG_END)
++			printf("  Big endian\n");
++		else
++			printf("  Little endian\n");
++		printf("Verify secure image: PASS\n");
++		return OTP_SUCCESS;
++	}
++	printf("Verify secure image: FAIL\n");
++	return OTP_FAILURE;
++}
++
++static int otp_invalid_key(u32 header_offset, int force)
++{
++	int i;
++	int ret;
++	u32 header_list[16];
++	u32 header;
++	u32 key_type;
++	u32 prog_val;
++
++	for (i = 0; i < 16 ; i += 2)
++		otp_read_data(i, &header_list[i]);
++	header = header_list[header_offset];
++	key_type = (header >> 14) & 0xf;
++	_otp_print_key(header, header_offset, NULL);
++	if (key_type == 0 || key_type == 0xf) {
++		printf("Key[%d] already invalid\n", header_offset);
++		return OTP_SUCCESS;
++	}
++
++	printf("Key[%d] will be invalid\n", header_offset);
++	if (force == 0) {
++		printf("type \"YES\" (no quotes) to continue:\n");
++		if (!confirm_yesno()) {
++			printf(" Aborting\n");
++			return OTP_FAILURE;
++		}
++	}
++
++	if (header_offset % 2)
++		prog_val = 0;
++	else
++		prog_val = 1;
++	for (i = 14; i <= 17; i++) {
++		ret = otp_prog_dc_b(prog_val, header_offset, i);
++		if (ret) {
++			printf("OTPDATA0x%x[%d] programming failed\n", header_offset, i);
++			return OTP_FAILURE;
++		}
++	}
++
++	printf("SUCCESS\n");
++	return OTP_SUCCESS;
++}
++
+ static int do_otpread(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
+ {
+ 	u32 offset, count;
+@@ -2801,6 +3279,52 @@
+ 	return CMD_RET_SUCCESS;
+ }
+ 
++static int do_otpverify(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
++{
++	phys_addr_t addr;
++	int ret;
++
++	if (argc == 2) {
++		addr = simple_strtoul(argv[1], NULL, 16);
++		ret = otp_verify_boot_image(addr);
++	} else {
++		return CMD_RET_USAGE;
++	}
++
++	if (ret == OTP_SUCCESS)
++		return CMD_RET_SUCCESS;
++	else if (ret == OTP_FAILURE)
++		return CMD_RET_FAILURE;
++	else
++		return CMD_RET_USAGE;
++}
++
++static int do_otpinvalid(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
++{
++	u32 header_offset;
++	int force = 0;
++	int ret;
++
++	if (argc == 3) {
++		if (strcmp(argv[1], "o"))
++			return CMD_RET_USAGE;
++		force = 1;
++		header_offset = simple_strtoul(argv[2], NULL, 16);
++	} else if (argc == 2) {
++		header_offset = simple_strtoul(argv[1], NULL, 16);
++	} else {
++		return CMD_RET_USAGE;
++	}
++
++	if (header_offset > 16)
++		return CMD_RET_USAGE;
++	ret = otp_invalid_key(header_offset, force);
++
++	if (ret)
++		return CMD_RET_FAILURE;
++	return CMD_RET_SUCCESS;
++}
++
+ static cmd_tbl_t cmd_otp[] = {
+ 	U_BOOT_CMD_MKENT(version, 1, 0, do_otpver, "", ""),
+ 	U_BOOT_CMD_MKENT(read, 4, 0, do_otpread, "", ""),
+@@ -2813,6 +3337,8 @@
+ 	U_BOOT_CMD_MKENT(update, 3, 0, do_otpupdate, "", ""),
+ 	U_BOOT_CMD_MKENT(rid, 1, 0, do_otprid, "", ""),
+ 	U_BOOT_CMD_MKENT(retire, 3, 0, do_otpretire, "", ""),
++	U_BOOT_CMD_MKENT(verify, 2, 0, do_otpverify, "", ""),
++	U_BOOT_CMD_MKENT(invalid, 3, 0, do_otpinvalid, "", ""),
+ };
+ 
+ static int do_ast_otp(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
+@@ -2922,4 +3448,6 @@
+ 	   "otp update [o] <revision_id>\n"
+ 	   "otp rid\n"
+ 	   "otp retire [o] <key_id>\n"
++	   "otp verify <addr>\n"
++	   "otp invalid [o] <header_offset>\n"
+ 	  );
+diff -Naur  uboot_org/drivers/crypto/aspeed_acry.c uboot/drivers/crypto/aspeed_acry.c
+--- uboot_org/drivers/crypto/aspeed_acry.c	2022-07-25 16:07:51.296593761 +0800
++++ uboot/drivers/crypto/aspeed_acry.c	2022-08-09 12:24:32.000000000 +0800
+@@ -1,16 +1,130 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ /*
+- * (C) Copyright ASPEED Technology Inc.
++ * Copyright ASPEED Technology Inc.
+  */
++#include <config.h>
+ #include <common.h>
+ #include <clk.h>
++#include <dm.h>
++#include <asm/types.h>
++#include <asm/io.h>
+ #include <dm/device.h>
+ #include <dm/fdtaddr.h>
++#include <linux/delay.h>
++#include <u-boot/rsa-mod-exp.h>
++
++/* ACRY register offsets */
++#define ACRY_CTRL1		0x00
++#define   ACRY_CTRL1_RSA_DMA		BIT(1)
++#define   ACRY_CTRL1_RSA_START		BIT(0)
++#define ACRY_CTRL2		0x44
++#define ACRY_CTRL3		0x48
++#define   ACRY_CTRL3_SRAM_AHB_ACCESS	BIT(8)
++#define   ACRY_CTRL3_ECC_RSA_MODE_MASK	GENMASK(5, 4)
++#define   ACRY_CTRL3_ECC_RSA_MODE_SHIFT	4
++#define ACRY_DMA_DRAM_SADDR	0x4c
++#define ACRY_DMA_DMEM_TADDR	0x50
++#define   ACRY_DMA_DMEM_TADDR_LEN_MASK	GENMASK(15, 0)
++#define   ACRY_DMA_DMEM_TADDR_LEN_SHIFT	0
++#define ACRY_RSA_PARAM		0x58
++#define   ACRY_RSA_PARAM_EXP_MASK	GENMASK(31, 16)
++#define   ACRY_RSA_PARAM_EXP_SHIFT	16
++#define   ACRY_RSA_PARAM_MOD_MASK	GENMASK(15, 0)
++#define   ACRY_RSA_PARAM_MOD_SHIFT	0
++#define ACRY_RSA_INT_EN		0x3f8
++#define   ACRY_RSA_INT_EN_RSA_READY	BIT(2)
++#define   ACRY_RSA_INT_EN_RSA_CMPLT	BIT(1)
++#define ACRY_RSA_INT_STS	0x3fc
++#define   ACRY_RSA_INT_STS_RSA_READY	BIT(2)
++#define   ACRY_RSA_INT_STS_RSA_CMPLT	BIT(1)
++
++/* misc. constant */
++#define ACRY_ECC_MODE	2
++#define ACRY_RSA_MODE	3
++#define ACRY_CTX_BUFSZ	0x600
+ 
+ struct aspeed_acry {
++	phys_addr_t base;
++	phys_addr_t sram_base; /* internal sram */
+ 	struct clk clk;
+ };
+ 
++static int aspeed_acry_mod_exp(struct udevice *dev, const uint8_t *sig, uint32_t sig_len,
++			       struct key_prop *prop, uint8_t *out)
++{
++	int i, j;
++	u8 *ctx;
++	u8 *ptr;
++	u32 reg;
++	struct aspeed_acry *acry = dev_get_priv(dev);
++
++	ctx = memalign(16, ACRY_CTX_BUFSZ);
++	if (!ctx)
++		return -ENOMEM;
++
++	memset(ctx, 0, ACRY_CTX_BUFSZ);
++
++	ptr = (u8 *)prop->public_exponent;
++	for (i = prop->exp_len - 1, j = 0; i >= 0; --i) {
++		ctx[j] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	ptr = (u8 *)prop->modulus;
++	for (i = (prop->num_bits >> 3) - 1, j = 0; i >= 0; --i) {
++		ctx[j + 16] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	ptr = (u8 *)sig;
++	for (i = sig_len - 1, j = 0; i >= 0; --i) {
++		ctx[j + 32] = ptr[i];
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	writel((u32)ctx, acry->base + ACRY_DMA_DRAM_SADDR);
++
++	reg = (((prop->exp_len << 3) << ACRY_RSA_PARAM_EXP_SHIFT) & ACRY_RSA_PARAM_EXP_MASK) |
++		  ((prop->num_bits << ACRY_RSA_PARAM_MOD_SHIFT) & ACRY_RSA_PARAM_MOD_MASK);
++	writel(reg, acry->base + ACRY_RSA_PARAM);
++
++	reg = (ACRY_CTX_BUFSZ << ACRY_DMA_DMEM_TADDR_LEN_SHIFT) & ACRY_DMA_DMEM_TADDR_LEN_MASK;
++	writel(reg, acry->base + ACRY_DMA_DMEM_TADDR);
++
++	reg = (ACRY_RSA_MODE << ACRY_CTRL3_ECC_RSA_MODE_SHIFT) & ACRY_CTRL3_ECC_RSA_MODE_MASK;
++	writel(reg, acry->base + ACRY_CTRL3);
++
++	writel(ACRY_CTRL1_RSA_DMA | ACRY_CTRL1_RSA_START, acry->base + ACRY_CTRL1);
++
++	/* polling RSA status */
++	while (1) {
++		reg = readl(acry->base + ACRY_RSA_INT_STS);
++		if ((reg & ACRY_RSA_INT_STS_RSA_READY) && (reg & ACRY_RSA_INT_STS_RSA_CMPLT)) {
++			writel(reg, acry->base + ACRY_RSA_INT_STS);
++			break;
++		}
++		udelay(20);
++	}
++
++	/* grant SRAM access permission to CPU */
++	writel(0x0, acry->base + ACRY_CTRL1);
++	writel(ACRY_CTRL3_SRAM_AHB_ACCESS, acry->base + ACRY_CTRL3);
++	udelay(20);
++
++	for (i = (prop->num_bits / 8) - 1, j = 0; i >= 0; --i) {
++		out[i] = readb(acry->sram_base + (j + 32));
++		j++;
++		j = (j % 16) ? j : j + 32;
++	}
++
++	free(ctx);
++
++	return 0;
++}
++
+ static int aspeed_acry_probe(struct udevice *dev)
+ {
+ 	struct aspeed_acry *acry = dev_get_priv(dev);
+@@ -28,6 +142,21 @@
+ 		return ret;
+ 	}
+ 
++	acry->base = devfdt_get_addr_index(dev, 0);
++	if (acry->base == FDT_ADDR_T_NONE) {
++		debug("Failed to get acry base\n");
++		return acry->base;
++	}
++
++	acry->sram_base = devfdt_get_addr_index(dev, 1);
++	if (acry->sram_base == FDT_ADDR_T_NONE) {
++		debug("Failed to get acry SRAM base\n");
++		return acry->sram_base;
++	}
++
++	/* grant SRAM access permission to CPU */
++	writel(ACRY_CTRL3_SRAM_AHB_ACCESS, acry->base + ACRY_CTRL3);
++
+ 	return ret;
+ }
+ 
+@@ -40,6 +169,10 @@
+ 	return 0;
+ }
+ 
++static const struct mod_exp_ops aspeed_acry_ops = {
++	.mod_exp = aspeed_acry_mod_exp,
++};
++
+ static const struct udevice_id aspeed_acry_ids[] = {
+ 	{ .compatible = "aspeed,ast2600-acry" },
+ 	{ }
+@@ -47,10 +180,11 @@
+ 
+ U_BOOT_DRIVER(aspeed_acry) = {
+ 	.name = "aspeed_acry",
+-	.id = UCLASS_MISC,
++	.id = UCLASS_MOD_EXP,
+ 	.of_match = aspeed_acry_ids,
+ 	.probe = aspeed_acry_probe,
+ 	.remove = aspeed_acry_remove,
+ 	.priv_auto_alloc_size = sizeof(struct aspeed_acry),
++	.ops = &aspeed_acry_ops,
+ 	.flags = DM_FLAG_PRE_RELOC,
+ };
+diff -Naur  uboot_org/drivers/crypto/aspeed_rsa.c uboot/drivers/crypto/aspeed_rsa.c
+--- uboot_org/drivers/crypto/aspeed_rsa.c	2022-07-25 16:07:51.296593761 +0800
++++ uboot/drivers/crypto/aspeed_rsa.c	1970-01-01 08:00:00.000000000 +0800
+@@ -1,138 +0,0 @@
+-// SPDX-License-Identifier: GPL-2.0+
+-/*
+- * (C) Copyright 2021 ASPEED Technology Inc.
+- */
+-
+-#include <config.h>
+-#include <common.h>
+-#include <dm.h>
+-#include <asm/types.h>
+-#include <asm/io.h>
+-#include <malloc.h>
+-#include <u-boot/rsa-mod-exp.h>
+-
+-/* ARCY data memory (internal SRAM) */
+-#define ARCY_DMEM_BASE		0x1e710000
+-#define ARCY_DMEM_SIZE		0x10000
+-
+-/* ARCY registers */
+-#define ARCY_BASE			0x1e6fa000
+-#define ARCY_CTRL1			(ARCY_BASE + 0x00)
+-#define   ARCY_CTRL1_RSA_DMA		BIT(1)
+-#define   ARCY_CTRL1_RSA_START		BIT(0)
+-#define ARCY_CTRL2			(ARCY_BASE + 0x44)
+-#define ARCY_CTRL3			(ARCY_BASE + 0x48)
+-#define   ARCY_CTRL3_SRAM_AHB_ACCESS	BIT(8)
+-#define   ARCY_CTRL3_ECC_RSA_MODE_MASK	GENMASK(5, 4)
+-#define   ARCY_CTRL3_ECC_RSA_MODE_SHIFT	4
+-#define ARCY_DMA_DRAM_SADDR		(ARCY_BASE + 0x4c)
+-#define ARCY_DMA_DMEM_TADDR		(ARCY_BASE + 0x50)
+-#define   ARCY_DMA_DMEM_TADDR_LEN_MASK	GENMASK(15, 0)
+-#define   ARCY_DMA_DMEM_TADDR_LEN_SHIFT	0
+-#define ARCY_RSA_PARAM			(ARCY_BASE + 0x58)
+-#define   ARCY_RSA_PARAM_EXP_MASK	GENMASK(31, 16)
+-#define   ARCY_RSA_PARAM_EXP_SHIFT	16
+-#define   ARCY_RSA_PARAM_MOD_MASK	GENMASK(15, 0)
+-#define   ARCY_RSA_PARAM_MOD_SHIFT	0
+-#define ARCY_RSA_INT_EN			(ARCY_BASE + 0x3f8)
+-#define   ARCY_RSA_INT_EN_RSA_READY	BIT(2)
+-#define   ARCY_RSA_INT_EN_RSA_CMPLT	BIT(1)
+-#define ARCY_RSA_INT_STS		(ARCY_BASE + 0x3fc)
+-#define   ARCY_RSA_INT_STS_RSA_READY	BIT(2)
+-#define   ARCY_RSA_INT_STS_RSA_CMPLT	BIT(1)
+-
+-/* misc. constant */
+-#define ARCY_ECC_MODE	2
+-#define ARCY_RSA_MODE	3
+-#define ARCY_CTX_BUFSZ	0x600
+-
+-static int aspeed_mod_exp(struct udevice *dev, const uint8_t *sig, uint32_t sig_len,
+-			  struct key_prop *prop, uint8_t *out)
+-{
+-	int i, j;
+-	u8 *ctx;
+-	u8 *ptr;
+-	u32 reg;
+-
+-	ctx = memalign(16, ARCY_CTX_BUFSZ);
+-	if (!ctx)
+-		return -ENOMEM;
+-
+-	memset(ctx, 0, ARCY_CTX_BUFSZ);
+-
+-	ptr = (u8 *)prop->public_exponent;
+-	for (i = prop->exp_len - 1, j = 0; i >= 0; --i) {
+-		ctx[j] = ptr[i];
+-		j++;
+-		j = (j % 16) ? j : j + 32;
+-	}
+-
+-	ptr = (u8 *)prop->modulus;
+-	for (i = (prop->num_bits >> 3) - 1, j = 0; i >= 0; --i) {
+-		ctx[j + 16] = ptr[i];
+-		j++;
+-		j = (j % 16) ? j : j + 32;
+-	}
+-
+-	ptr = (u8 *)sig;
+-	for (i = sig_len - 1, j = 0; i >= 0; --i) {
+-		ctx[j + 32] = ptr[i];
+-		j++;
+-		j = (j % 16) ? j : j + 32;
+-	}
+-
+-	writel((u32)ctx, ARCY_DMA_DRAM_SADDR);
+-
+-	reg = (((prop->exp_len << 3) << ARCY_RSA_PARAM_EXP_SHIFT) & ARCY_RSA_PARAM_EXP_MASK) |
+-	      ((prop->num_bits << ARCY_RSA_PARAM_MOD_SHIFT) & ARCY_RSA_PARAM_MOD_MASK);
+-	writel(reg, ARCY_RSA_PARAM);
+-
+-	reg = (ARCY_CTX_BUFSZ << ARCY_DMA_DMEM_TADDR_LEN_SHIFT) & ARCY_DMA_DMEM_TADDR_LEN_MASK;
+-	writel(reg, ARCY_DMA_DMEM_TADDR);
+-
+-	reg = (ARCY_RSA_MODE << ARCY_CTRL3_ECC_RSA_MODE_SHIFT) & ARCY_CTRL3_ECC_RSA_MODE_MASK;
+-	writel(reg, ARCY_CTRL3);
+-
+-	writel(ARCY_CTRL1_RSA_DMA | ARCY_CTRL1_RSA_START, ARCY_CTRL1);
+-
+-	/* polling RSA status */
+-	while (1) {
+-		reg = readl(ARCY_RSA_INT_STS);
+-		if (reg & ARCY_RSA_INT_STS_RSA_CMPLT) {
+-			writel(reg, ARCY_RSA_INT_STS);
+-			break;
+-		}
+-		udelay(20);
+-	}
+-
+-	writel(0x0, ARCY_CTRL1);
+-	writel(ARCY_CTRL3_SRAM_AHB_ACCESS, ARCY_CTRL3);
+-	udelay(20);
+-
+-	ptr = (u8 *)ARCY_DMEM_BASE;
+-	for (i = (prop->num_bits / 8) - 1, j = 0; i >= 0; --i) {
+-		out[i] = ptr[j + 32];
+-		j++;
+-		j = (j % 16) ? j : j + 32;
+-	}
+-
+-	writel(0, ARCY_CTRL3);
+-	free(ctx);
+-
+-	return 0;
+-}
+-
+-static const struct mod_exp_ops aspeed_arcy_ops = {
+-	.mod_exp	= aspeed_mod_exp,
+-};
+-
+-U_BOOT_DRIVER(aspeed_rsa_mod_exp) = {
+-	.name = "aspeed_rsa_mod_exp",
+-	.id = UCLASS_MOD_EXP,
+-	.ops = &aspeed_arcy_ops,
+-	.flags = DM_FLAG_PRE_RELOC,
+-};
+-
+-U_BOOT_DEVICE(aspeed_rsa) = {
+-	.name = "aspeed_rsa_mod_exp",
+-};
+diff -Naur  uboot_org/drivers/crypto/Makefile uboot/drivers/crypto/Makefile
+--- uboot_org/drivers/crypto/Makefile	2022-07-25 16:07:51.300593709 +0800
++++ uboot/drivers/crypto/Makefile	2022-08-09 12:24:16.000000000 +0800
+@@ -8,4 +8,3 @@
+ obj-y += fsl/
+ obj-$(CONFIG_ASPEED_HACE) += aspeed_hace.o
+ obj-$(CONFIG_ASPEED_ACRY) += aspeed_acry.o
+-obj-$(CONFIG_RSA_ASPEED_EXP) += aspeed_rsa.o
+diff -Naur  uboot_org/drivers/ram/aspeed/Kconfig uboot/drivers/ram/aspeed/Kconfig
+--- uboot_org/drivers/ram/aspeed/Kconfig	2022-07-25 16:07:48.652627651 +0800
++++ uboot/drivers/ram/aspeed/Kconfig	2022-08-09 12:05:32.047121260 +0800
+@@ -63,4 +63,50 @@
+ 	  the ECC engine.  If the size is set to 0, the sdram driver will 
+ 	  calculate the SDRAM size and set the whole range be ECC enabled.
+ endif
++
++choice
++	prompt "DDR4 PHY side ODT"
++	default ASPEED_DDR4_PHY_ODT40
++
++config ASPEED_DDR4_PHY_ODT60
++	bool "DDR4 PHY side ODT 60 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 PHY side ODT 60 ohm
++
++config ASPEED_DDR4_PHY_ODT48
++	bool "DDR4 PHY side ODT 48 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 PHY side ODT 48 ohm
++
++config ASPEED_DDR4_PHY_ODT40
++	bool "DDR4 PHY side ODT 40 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 PHY side ODT 40 ohm
++endchoice
++
++choice
++	prompt "DDR4 DRAM side ODT"
++	default ASPEED_DDR4_DRAM_ODT40
++
++config ASPEED_DDR4_DRAM_ODT60
++	bool "DDR4 DRAM side ODT 60 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 DRAM side ODT 60 ohm
++
++config ASPEED_DDR4_DRAM_ODT48
++	bool "DDR4 DRAM side ODT 48 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 DRAM side ODT 48 ohm
++
++config ASPEED_DDR4_DRAM_ODT40
++	bool "DDR4 DRAM side ODT 40 ohm"
++	depends on DM && OF_CONTROL && ARCH_ASPEED
++	help
++	  select DDR4 DRAM side ODT 40 ohm
++endchoice
+ endif
+diff -Naur  uboot_org/drivers/ram/aspeed/sdram_ast2600.c uboot/drivers/ram/aspeed/sdram_ast2600.c
+--- uboot_org/drivers/ram/aspeed/sdram_ast2600.c	2022-08-09 12:00:46.424986082 +0800
++++ uboot/drivers/ram/aspeed/sdram_ast2600.c	2022-08-09 12:06:04.270861558 +0800
+@@ -82,14 +82,29 @@
+ #error "undefined DDR4 target rate\n"
+ #endif
+ 
++/**
++ * MR01[26:24] - ODT configuration (DRAM side)
++ *   b'001 : 60 ohm
++ *   b'101 : 48 ohm
++ *   b'011 : 40 ohm (default)
++ */
++#if defined(CONFIG_ASPEED_DDR4_DRAM_ODT60)
++#define MR01_DRAM_ODT			(0x1 << 24)
++#elif defined(CONFIG_ASPEED_DDR4_DRAM_ODT48)
++#define MR01_DRAM_ODT			(0x5 << 24)
++#else
++#define MR01_DRAM_ODT			(0x3 << 24)
++#endif
++
+ /* AC timing and SDRAM mode registers */
+ #if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+ /* mode register settings for FPGA are fixed */
+-#define DDR4_MR01_MODE		0x03010100
++#define DDR4_MR01_MODE		(MR01_DRAM_ODT | 0x00010100)
+ #define DDR4_MR23_MODE		0x00000000
+ #define DDR4_MR45_MODE		0x04C00000
+ #define DDR4_MR6_MODE		0x00000050
+ #define DDR4_TRFC_FPGA		0x17263434
++#define DDR4_TRFI		0x5d
+ 
+ /* FPGA need for an additional initialization procedure: search read window */
+ #define SEARCH_RDWIN_ANCHOR_0   (CONFIG_SYS_SDRAM_BASE + 0x0000)
+@@ -99,7 +114,7 @@
+ #define SEARCH_RDWIN_PTRN_SUM   0xbcf02355
+ #else
+ /* mode register setting for real chip are derived from the model GDDR4-1600 */
+-#define DDR4_MR01_MODE		0x03010510
++#define DDR4_MR01_MODE		(MR01_DRAM_ODT | 0x00010510)
+ #define DDR4_MR23_MODE		0x00000000
+ #define DDR4_MR45_MODE		0x04000000
+ #define DDR4_MR6_MODE           0x00000400
+@@ -107,6 +122,21 @@
+ #define DDR4_TRFC_1333		0x3a5f80c9
+ #define DDR4_TRFC_800		0x23394c78
+ #define DDR4_TRFC_400		0x111c263c
++/*
++ * tRFI calculation
++ * DDR4 spec. :
++ * tRFI = 7.8 us if temperature is Less/equal than 85 degree celsius
++ * tRFI = 3.9 us if temperature is greater than 85 degree celsius
++ *
++ * tRFI in MCR0C = floor(tRFI * 12.5M) - margin
++ * normal temp. -> floor(7.8 * 12.5) - 2 = 0x5f
++ * high temp. -> floor(3.9 * 12.5) - 1 = 0x2f
++ */
++#ifdef CONFIG_ASPEED_HI_TEMP_TRFI
++#define DDR4_TRFI		0x2f	/* High temperature tRFI */
++#else
++#define DDR4_TRFI		0x5f	/* Normal temperature tRFI */
++#endif /* end of "#ifdef CONFIG_ASPEED_HI_TEMP_TRFI" */
+ #endif /* end of "#if defined(CONFIG_FPGA_ASPEED) ||                           \
+ 	  defined(CONFIG_ASPEED_PALLADIUM)" */
+ 
+@@ -146,14 +176,14 @@
+  * These are hardcoded settings taken from Aspeed SDK.
+  */
+ #if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+-static const u32 ddr4_ac_timing[4] = {0x030C0207, 0x04451133, 0x0E010200,
+-                                      0x00000140};
++static const u32 ddr4_ac_timing[4] = { 0x030C0207, 0x04451133, 0x0E010200,
++				       0x00000140 };
+ 
+-static const u32 ddr_max_grant_params[4] = {0x88888888, 0x88888888, 0x88888888,
+-                                            0x88888888};
++static const u32 ddr_max_grant_params[4] = { 0x88888888, 0x88888888, 0x88888888,
++					     0x88888888 };
+ #else
+-static const u32 ddr4_ac_timing[4] = {0x040e0307, 0x0f4711f1, 0x0e060304,
+-                                      0x00001240};
++static const u32 ddr4_ac_timing[4] = { 0x040e0307, 0x0f4711f1, 0x0e060304,
++				       0x00001240 };
+ 
+ static const u32 ddr_max_grant_params[4] = { 0x44484488, 0xee4444ee, 0x44444444,
+ 					     0x44444444 };
+@@ -214,21 +244,20 @@
+ #if !defined(CONFIG_FPGA_ASPEED) && !defined(CONFIG_ASPEED_PALLADIUM)
+ 	u32 reg_base = (u32)info->phy_setting;
+ 	u32 addr = p_tbl[0];
+-        u32 data;
+-        int i = 1;
++	u32 data;
++	int i = 1;
+ 
+ 	writel(0, &info->regs->phy_ctrl[0]);
+ 	udelay(10);
+ 	//writel(SDRAM_PHYCTRL0_NRST, &regs->phy_ctrl[0]);
+ 
+-
+-        /* load PHY configuration table into PHY-setting registers */
+-        while (1) {
+-                if (addr < reg_base) {
+-                        debug("invalid DDR-PHY addr: 0x%08x\n", addr);
+-                        break;
+-                }
+-                data = p_tbl[i++];
++	/* load PHY configuration table into PHY-setting registers */
++	while (1) {
++		if (addr < reg_base) {
++			debug("invalid DDR-PHY addr: 0x%08x\n", addr);
++			break;
++		}
++		data = p_tbl[i++];
+ 
+ 		if (data == DDR_PHY_TBL_END) {
+ 			break;
+@@ -249,8 +278,8 @@
+ static int ast2600_sdramphy_check_status(struct dram_info *info)
+ {
+ #if !defined(CONFIG_FPGA_ASPEED) && !defined(CONFIG_ASPEED_PALLADIUM)
+-        u32 value, tmp;
+-        u32 reg_base = (u32)info->phy_status;
++	u32 value, tmp;
++	u32 reg_base = (u32)info->phy_status;
+ 	int need_retrain = 0;
+ 
+ 	debug("\nSDRAM PHY training report:\n");
+@@ -267,11 +296,11 @@
+ 	/* PU & PD */
+ 	value = readl(reg_base + 0x30);
+ 	debug("rO_DDRPHY_reg offset 0x30 = 0x%08x\n", value);
+-        debug("  PU = 0x%02x\n", value & 0xff);
+-        debug("  PD = 0x%02x\n", (value >> 16) & 0xff);
++	debug("  PU = 0x%02x\n", value & 0xff);
++	debug("  PD = 0x%02x\n", (value >> 16) & 0xff);
+ 
+ 	/* read eye window */
+-        value = readl(reg_base + 0x68);
++	value = readl(reg_base + 0x68);
+ 	if (0 == (value & GENMASK(7, 0))) {
+ 		need_retrain = 1;
+ 	}
+@@ -281,7 +310,7 @@
+ 	tmp = (((value & GENMASK(7, 0)) >> 0) * 100) / 255;
+ 	debug("    B0:%d%%\n", tmp);
+ 	tmp = (((value & GENMASK(15, 8)) >> 8) * 100) / 255;
+-        debug("    B1:%d%%\n", tmp);
++	debug("    B1:%d%%\n", tmp);
+ 
+ 	value = readl(reg_base + 0xC8);
+ 	debug("rO_DDRPHY_reg offset 0xC8 = 0x%08x\n", value);
+@@ -289,10 +318,10 @@
+ 	tmp = (((value & GENMASK(7, 0)) >> 0) * 100) / 255;
+ 	debug("    B0:%d%%\n", tmp);
+ 	tmp = (((value & GENMASK(15, 8)) >> 8) * 100) / 255;
+-        debug("    B1:%d%%\n", tmp);
++	debug("    B1:%d%%\n", tmp);
+ 
+-        /* write eye window */
+-        value = readl(reg_base + 0x7c);
++	/* write eye window */
++	value = readl(reg_base + 0x7c);
+ 	if (0 == (value & GENMASK(7, 0))) {
+ 		need_retrain = 1;
+ 	}
+@@ -302,26 +331,17 @@
+ 	tmp = (((value & GENMASK(7, 0)) >> 0) * 100) / 255;
+ 	debug("    B0:%d%%\n", tmp);
+ 	tmp = (((value & GENMASK(15, 8)) >> 8) * 100) / 255;
+-        debug("    B1:%d%%\n", tmp);
++	debug("    B1:%d%%\n", tmp);
+ 
+-	/* read Vref training result */
+-        value = readl(reg_base + 0x88);
++	/* read Vref (PHY side) training result */
++	value = readl(reg_base + 0x88);
+ 	debug("rO_DDRPHY_reg offset 0x88 = 0x%08x\n", value);
+-        debug("  read Vref training result\n");
+-	tmp = (((value & GENMASK(7, 0)) >> 0) * 100) / 127;
+-	debug("    B0:%d%%\n", tmp);
+-	tmp = (((value & GENMASK(15, 8)) >> 8) * 100) / 127;
+-        debug("    B1:%d%%\n", tmp);
+ 
+-        /* write Vref training result */
+-        value = readl(reg_base + 0x90);
++	/* write Vref (DRAM side) training result */
++	value = readl(reg_base + 0x90);
+ 	debug("rO_DDRPHY_reg offset 0x90 = 0x%08x\n", value);
+-#if 0
+-	tmp = (((value & GENMASK(5, 0)) >> 0) * 100) / 127;
+-        debug("  write Vref training result = %d%%\n", tmp);
+-#endif
+ 
+-        /* gate train */
++	/* gate train */
+ 	value = readl(reg_base + 0x50);
+ 	if ((0 == (value & GENMASK(15, 0))) ||
+ 	    (0 == (value & GENMASK(31, 16)))) {
+@@ -350,8 +370,9 @@
+ #ifndef CONFIG_ASPEED_BYPASS_SELFTEST
+ #define MC_TEST_PATTERN_N 8
+ static u32 as2600_sdrammc_test_pattern[MC_TEST_PATTERN_N] = {
+-    0xcc33cc33, 0xff00ff00, 0xaa55aa55, 0x88778877,
+-    0x92cc4d6e, 0x543d3cde, 0xf1e843c7, 0x7c61d253};
++	0xcc33cc33, 0xff00ff00, 0xaa55aa55, 0x88778877,
++	0x92cc4d6e, 0x543d3cde, 0xf1e843c7, 0x7c61d253
++};
+ 
+ #define TIMEOUT_DRAM	5000000
+ int ast2600_sdrammc_dg_test(struct dram_info *info, unsigned int datagen, u32 mode)
+@@ -361,29 +382,28 @@
+ 	struct ast2600_sdrammc_regs *regs = info->regs;
+ 
+ 	writel(0, &regs->ecc_test_ctrl);
+-	if (mode == 0) {
++	if (mode == 0)
+ 		writel(0x00000085 | (datagen << 3), &regs->ecc_test_ctrl);
+-	} else {
++	else
+ 		writel(0x000000C1 | (datagen << 3), &regs->ecc_test_ctrl);
+-	}
+ 
+ 	do {
+ 		data = readl(&regs->ecc_test_ctrl) & GENMASK(13, 12);
+ 
+ 		if (data & BIT(13))
+-			return (0);
++			return 0;
+ 
+ 		if (++timeout > TIMEOUT_DRAM) {
+ 			printf("Timeout!!\n");
+ 			writel(0, &regs->ecc_test_ctrl);
+ 
+-			return (0);
++			return 0;
+ 		}
+ 	} while (!data);
+ 
+ 	writel(0, &regs->ecc_test_ctrl);
+ 
+-	return (1);
++	return 1;
+ }
+ 
+ int ast2600_sdrammc_cbr_test(struct dram_info *info)
+@@ -394,13 +414,15 @@
+ 	clrsetbits_le32(&regs->test_addr, GENMASK(30, 4), 0x7ffff0);
+ 
+ 	/* single */
+-	for (i=0; i<8; i++) {
+-  		if(!ast2600_sdrammc_dg_test(info, i, 0))   return(0);
++	for (i = 0; i < 8; i++) {
++		if (!ast2600_sdrammc_dg_test(info, i, 0))
++			return (0);
+ 	}
+ 
+ 	/* burst */
+-	for (i=0; i<8; i++) {
+-  		if(!ast2600_sdrammc_dg_test(info, i, i))   return(0);
++	for (i = 0; i < 8; i++) {
++		if (!ast2600_sdrammc_dg_test(info, i, i))
++			return (0);
+ 	}
+ 
+ 	return(1);
+@@ -422,7 +444,7 @@
+ 	while (finish == false) {
+ 		pattern = as2600_sdrammc_test_pattern[i++];
+ 		i = i % MC_TEST_PATTERN_N;
+-		debug("  pattern = %08X : ",pattern);
++		debug("  pattern = %08x : ", pattern);
+ 		writel(pattern, &regs->test_init_val);
+ 
+ 		if (!ast2600_sdrammc_cbr_test(info)) {
+@@ -438,7 +460,7 @@
+ 		}
+ 	}
+ 	debug("statistics: pass/fail/total:%d/%d/%d\n", pass_cnt, fail_cnt,
+-	       target_cnt);
++	      target_cnt);
+ 	return fail_cnt;
+ }
+ #endif
+@@ -457,12 +479,12 @@
+ */
+ static size_t ast2600_sdrammc_get_vga_mem_size(struct dram_info *info)
+ {
+-        u32 vga_hwconf;
+-        size_t vga_mem_size_base = 8 * 1024 * 1024;
++	u32 vga_hwconf;
++	size_t vga_mem_size_base = 8 * 1024 * 1024;
+ 
+-	vga_hwconf =
+-	    (readl(info->scu + AST_SCU_HW_STRAP) & SCU_HWSTRAP_VGAMEM_MASK) >>
+-	    SCU_HWSTRAP_VGAMEM_SHIFT;
++	vga_hwconf = (readl(info->scu + AST_SCU_HW_STRAP) &
++		      SCU_HWSTRAP_VGAMEM_MASK) >>
++		     SCU_HWSTRAP_VGAMEM_SHIFT;
+ 
+ 	if (vga_hwconf == 0) {
+ 		vga_hwconf = 1;
+@@ -483,143 +505,142 @@
+ #if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+ static void ast2600_sdrammc_fpga_set_pll(struct dram_info *info)
+ {
+-        u32 data;
+-        u32 scu_base = (u32)info->scu;
++	u32 data;
++	u32 scu_base = (u32)info->scu;
+ 
+-        writel(0x00000303, scu_base + AST_SCU_FPGA_PLL);
++	writel(0x00000303, scu_base + AST_SCU_FPGA_PLL);
+ 
+-        do {
+-                data = readl(scu_base + AST_SCU_FPGA_STATUS);
+-        } while (!(data & 0x100));
++	do {
++		data = readl(scu_base + AST_SCU_FPGA_STATUS);
++	} while (!(data & 0x100));
+ 
+-        writel(0x00000103, scu_base + AST_SCU_FPGA_PLL);
++	writel(0x00000103, scu_base + AST_SCU_FPGA_PLL);
+ }
+ 
+ static int ast2600_sdrammc_search_read_window(struct dram_info *info)
+ {
+-        u32 pll, pll_min, pll_max, dat1, offset;
+-        u32 win = 0x03, gwin = 0, gwinsize = 0;
+-        u32 phy_setting = (u32)info->phy_setting;
++	u32 pll, pll_min, pll_max, dat1, offset;
++	u32 win = 0x03, gwin = 0, gwinsize = 0;
++	u32 phy_setting = (u32)info->phy_setting;
+ 
+ #ifdef CONFIG_ASPEED_PALLADIUM
+ 	writel(0xc, phy_setting + 0x0000);
+-	return (1);
++	return 1;
+ #endif
+-        writel(SEARCH_RDWIN_PTRN_0, SEARCH_RDWIN_ANCHOR_0);
+-        writel(SEARCH_RDWIN_PTRN_1, SEARCH_RDWIN_ANCHOR_1);
++	writel(SEARCH_RDWIN_PTRN_0, SEARCH_RDWIN_ANCHOR_0);
++	writel(SEARCH_RDWIN_PTRN_1, SEARCH_RDWIN_ANCHOR_1);
++
++	while (gwin == 0) {
++		while (!(win & 0x80)) {
++			debug("Window = 0x%X\n", win);
++			writel(win, phy_setting + 0x0000);
++
++			dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++			dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++			while (dat1 == SEARCH_RDWIN_PTRN_SUM) {
++				ast2600_sdrammc_fpga_set_pll(info);
++				dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++				dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++			}
++
++			pll_min = 0xfff;
++			pll_max = 0x0;
++			pll = 0;
++			while (pll_max > 0 || pll < 256) {
++				ast2600_sdrammc_fpga_set_pll(info);
++				dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++				dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++				if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
++					if (pll_min > pll)
++						pll_min = pll;
++
++					if (pll_max < pll)
++						pll_max = pll;
++
++					debug("%3d_(%3d:%3d)\n", pll, pll_min,
++					      pll_max);
++				} else if (pll_max > 0) {
++					pll_min = pll_max - pll_min;
++					if (gwinsize < pll_min) {
++						gwin = win;
++						gwinsize = pll_min;
++					}
++					break;
++				}
++				pll += 1;
++			}
+ 
+-        while (gwin == 0) {
+-                while (!(win & 0x80)) {
+-                        debug("Window = 0x%X\n", win);
+-                        writel(win, phy_setting + 0x0000);
+-
+-                        dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                        dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-                        while (dat1 == SEARCH_RDWIN_PTRN_SUM) {
+-                                ast2600_sdrammc_fpga_set_pll(info);
+-                                dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                                dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-                        }
+-
+-                        pll_min = 0xfff;
+-                        pll_max = 0x0;
+-                        pll = 0;
+-                        while (pll_max > 0 || pll < 256) {
+-                                ast2600_sdrammc_fpga_set_pll(info);
+-                                dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                                dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-                                if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
+-                                        if (pll_min > pll) {
+-                                                pll_min = pll;
+-                                        }
+-                                        if (pll_max < pll) {
+-                                                pll_max = pll;
+-                                        }
+-                                        debug("%3d_(%3d:%3d)\n", pll, pll_min,
+-                                               pll_max);
+-                                } else if (pll_max > 0) {
+-                                        pll_min = pll_max - pll_min;
+-                                        if (gwinsize < pll_min) {
+-                                                gwin = win;
+-                                                gwinsize = pll_min;
+-                                        }
+-                                        break;
+-                                }
+-                                pll += 1;
+-                        }
+-
+-                        if (gwin != 0 && pll_max == 0) {
+-                                break;
+-                        }
+-                        win = win << 1;
+-                }
+-                if (gwin == 0) {
+-                        win = 0x7;
+-                }
+-        }
+-        debug("Set PLL Read Gating Window = %x\n", gwin);
+-        writel(gwin, phy_setting + 0x0000);
+-
+-        debug("PLL Read Window training\n");
+-        pll_min = 0xfff;
+-        pll_max = 0x0;
+-
+-        debug("Search Window Start\n");
+-        dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-        dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-        while (dat1 == SEARCH_RDWIN_PTRN_SUM) {
+-                ast2600_sdrammc_fpga_set_pll(info);
+-                dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-        }
+-
+-        debug("Search Window Margin\n");
+-        pll = 0;
+-        while (pll_max > 0 || pll < 256) {
+-                ast2600_sdrammc_fpga_set_pll(info);
+-                dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-                if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
+-                        if (pll_min > pll) {
+-                                pll_min = pll;
+-                        }
+-                        if (pll_max < pll) {
+-                                pll_max = pll;
+-                        }
+-                        debug("%3d_(%3d:%3d)\n", pll, pll_min, pll_max);
+-                } else if (pll_max > 0 && (pll_max - pll_min) > 20) {
+-                        break;
+-                } else if (pll_max > 0) {
+-                        pll_min = 0xfff;
+-                        pll_max = 0x0;
+-                }
+-                pll += 1;
+-        }
+-        if (pll_min < pll_max) {
+-                debug("PLL Read window = %d\n", (pll_max - pll_min));
+-                offset = (pll_max - pll_min) >> 1;
+-                pll_min = 0xfff;
+-                pll = 0;
+-                while (pll < (pll_min + offset)) {
+-                        ast2600_sdrammc_fpga_set_pll(info);
+-                        dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
+-                        dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
+-                        if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
+-                                if (pll_min > pll) {
+-                                        pll_min = pll;
+-                                }
+-                                debug("%d\n", pll);
+-                        } else {
+-                                pll_min = 0xfff;
+-                                pll_max = 0x0;
+-                        }
+-                        pll += 1;
+-                }
+-                return (1);
+-        } else {
+-                debug("PLL Read window training fail\n");
+-                return (0);
+-        }
++			if (gwin != 0 && pll_max == 0)
++				break;
++
++			win = win << 1;
++		}
++		if (gwin == 0)
++			win = 0x7;
++	}
++	debug("Set PLL Read Gating Window = %x\n", gwin);
++	writel(gwin, phy_setting + 0x0000);
++
++	debug("PLL Read Window training\n");
++	pll_min = 0xfff;
++	pll_max = 0x0;
++
++	debug("Search Window Start\n");
++	dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++	dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++	while (dat1 == SEARCH_RDWIN_PTRN_SUM) {
++		ast2600_sdrammc_fpga_set_pll(info);
++		dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++		dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++	}
++
++	debug("Search Window Margin\n");
++	pll = 0;
++	while (pll_max > 0 || pll < 256) {
++		ast2600_sdrammc_fpga_set_pll(info);
++		dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++		dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++		if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
++			if (pll_min > pll)
++				pll_min = pll;
++
++			if (pll_max < pll)
++				pll_max = pll;
++
++			debug("%3d_(%3d:%3d)\n", pll, pll_min, pll_max);
++		} else if (pll_max > 0 && (pll_max - pll_min) > 20) {
++			break;
++		} else if (pll_max > 0) {
++			pll_min = 0xfff;
++			pll_max = 0x0;
++		}
++		pll += 1;
++	}
++	if (pll_min < pll_max) {
++		debug("PLL Read window = %d\n", (pll_max - pll_min));
++		offset = (pll_max - pll_min) >> 1;
++		pll_min = 0xfff;
++		pll = 0;
++		while (pll < (pll_min + offset)) {
++			ast2600_sdrammc_fpga_set_pll(info);
++			dat1 = readl(SEARCH_RDWIN_ANCHOR_0);
++			dat1 += readl(SEARCH_RDWIN_ANCHOR_1);
++			if (dat1 == SEARCH_RDWIN_PTRN_SUM) {
++				if (pll_min > pll) {
++					pll_min = pll;
++				}
++				debug("%d\n", pll);
++			} else {
++				pll_min = 0xfff;
++				pll_max = 0x0;
++			}
++			pll += 1;
++		}
++		return (1);
++	} else {
++		debug("PLL Read window training fail\n");
++		return 0;
++	}
+ }
+ #endif /* end of "#if defined(CONFIG_FPGA_ASPEED) ||                           \
+ 	  defined(CONFIG_ASPEED_PALLADIUM)" */
+@@ -675,69 +696,62 @@
+ 
+ static int ast2600_sdrammc_init_ddr4(struct dram_info *info)
+ {
+-        const u32 power_ctrl = MCR34_CKE_EN | MCR34_AUTOPWRDN_EN |
+-                               MCR34_MREQ_BYPASS_DIS | MCR34_RESETN_DIS |
+-                               MCR34_ODT_EN | MCR34_ODT_AUTO_ON |
+-                               (0x1 << MCR34_ODT_EXT_SHIFT);
++	const u32 power_ctrl = MCR34_CKE_EN | MCR34_AUTOPWRDN_EN |
++			       MCR34_MREQ_BYPASS_DIS | MCR34_RESETN_DIS |
++			       MCR34_ODT_EN | MCR34_ODT_AUTO_ON |
++			       (0x1 << MCR34_ODT_EXT_SHIFT);
+ 
+-        /* init SDRAM-PHY only on real chip */
++	/* init SDRAM-PHY only on real chip */
+ 	ast2600_sdramphy_init(ast2600_sdramphy_config, info);
+-        writel((MCR34_CKE_EN | MCR34_MREQI_DIS | MCR34_RESETN_DIS),
+-               &info->regs->power_ctrl);
++	writel((MCR34_CKE_EN | MCR34_MREQI_DIS | MCR34_RESETN_DIS),
++	       &info->regs->power_ctrl);
+ 	udelay(5);
+ 	ast2600_sdramphy_kick_training(info);
+ 	udelay(500);
+-        writel(SDRAM_RESET_DLL_ZQCL_EN, &info->regs->refresh_timing);
++	writel(SDRAM_RESET_DLL_ZQCL_EN, &info->regs->refresh_timing);
+ 
+-        writel(MCR30_SET_MR(3), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(6), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(5), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(4), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(2), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(1), &info->regs->mode_setting_control);
+-        writel(MCR30_SET_MR(0) | MCR30_RESET_DLL_DELAY_EN,
+-               &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(3), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(6), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(5), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(4), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(2), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(1), &info->regs->mode_setting_control);
++	writel(MCR30_SET_MR(0) | MCR30_RESET_DLL_DELAY_EN,
++	       &info->regs->mode_setting_control);
++
++	writel(SDRAM_REFRESH_EN | SDRAM_RESET_DLL_ZQCL_EN |
++		       (DDR4_TRFI << SDRAM_REFRESH_PERIOD_SHIFT),
++	       &info->regs->refresh_timing);
+ 
+-#if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+-
+-        writel(SDRAM_REFRESH_EN | SDRAM_RESET_DLL_ZQCL_EN |
+-                   (0x5d << SDRAM_REFRESH_PERIOD_SHIFT),
+-               &info->regs->refresh_timing);
+-#else
+-        writel(SDRAM_REFRESH_EN | SDRAM_RESET_DLL_ZQCL_EN |
+-                   (0x5f << SDRAM_REFRESH_PERIOD_SHIFT),
+-               &info->regs->refresh_timing);
+-#endif
+-
+-        /* wait self-refresh idle */
+-        while (readl(&info->regs->power_ctrl) & MCR34_SELF_REFRESH_STATUS_MASK)
+-                ;
++	/* wait self-refresh idle */
++	while (readl(&info->regs->power_ctrl) & MCR34_SELF_REFRESH_STATUS_MASK)
++		;
+ 
+ #if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+-        writel(SDRAM_REFRESH_EN | SDRAM_LOW_PRI_REFRESH_EN |
+-                   SDRAM_REFRESH_ZQCS_EN |
+-                   (0x5d << SDRAM_REFRESH_PERIOD_SHIFT) |
+-                   (0x4000 << SDRAM_REFRESH_PERIOD_ZQCS_SHIFT),
+-               &info->regs->refresh_timing);
+-#else
+-        writel(SDRAM_REFRESH_EN | SDRAM_LOW_PRI_REFRESH_EN |
+-                   SDRAM_REFRESH_ZQCS_EN |
+-                   (0x5f << SDRAM_REFRESH_PERIOD_SHIFT) |
+-                   (0x42aa << SDRAM_REFRESH_PERIOD_ZQCS_SHIFT),
+-               &info->regs->refresh_timing);
++	writel(SDRAM_REFRESH_EN | SDRAM_LOW_PRI_REFRESH_EN |
++		       SDRAM_REFRESH_ZQCS_EN |
++		       (DDR4_TRFI << SDRAM_REFRESH_PERIOD_SHIFT) |
++		       (0x4000 << SDRAM_REFRESH_PERIOD_ZQCS_SHIFT),
++	       &info->regs->refresh_timing);
++#else
++	writel(SDRAM_REFRESH_EN | SDRAM_LOW_PRI_REFRESH_EN |
++		       SDRAM_REFRESH_ZQCS_EN |
++		       (DDR4_TRFI << SDRAM_REFRESH_PERIOD_SHIFT) |
++		       (0x42aa << SDRAM_REFRESH_PERIOD_ZQCS_SHIFT),
++	       &info->regs->refresh_timing);
+ #endif
+ 
+-        writel(power_ctrl, &info->regs->power_ctrl);
++	writel(power_ctrl, &info->regs->power_ctrl);
+ 	udelay(500);
+ 
+ #if defined(CONFIG_FPGA_ASPEED)
+-        /* toggle Vref training */
+-        setbits_le32(&info->regs->mr6_mode_setting, 0x80);
+-        writel(MCR30_RESET_DLL_DELAY_EN | MCR30_SET_MR(6),
+-               &info->regs->mode_setting_control);
+-        clrbits_le32(&info->regs->mr6_mode_setting, 0x80);
+-        writel(MCR30_RESET_DLL_DELAY_EN | MCR30_SET_MR(6),
+-               &info->regs->mode_setting_control);
++	/* toggle Vref training */
++	setbits_le32(&info->regs->mr6_mode_setting, 0x80);
++	writel(MCR30_RESET_DLL_DELAY_EN | MCR30_SET_MR(6),
++	       &info->regs->mode_setting_control);
++	clrbits_le32(&info->regs->mr6_mode_setting, 0x80);
++	writel(MCR30_RESET_DLL_DELAY_EN | MCR30_SET_MR(6),
++	       &info->regs->mode_setting_control);
+ #endif
+ 	return 0;
+ }
+@@ -760,34 +774,33 @@
+ {
+ 	int i;
+ 
+-        writel(MCR34_MREQI_DIS | MCR34_RESETN_DIS, &regs->power_ctrl);
+-        writel(SDRAM_VIDEO_UNLOCK_KEY, &regs->gm_protection_key);
+-	/* [6:0] : Group 1 request queued number = 20
+-	 * [14:8] : Group 2 request queued number = 20
++	writel(MCR34_MREQI_DIS | MCR34_RESETN_DIS, &regs->power_ctrl);
++	writel(SDRAM_VIDEO_UNLOCK_KEY, &regs->gm_protection_key);
++	/* [6:0] : Group 1 request queued number = 16
++	 * [14:8] : Group 2 request queued number = 16
+ 	 * [20:16] : R/W max-grant count for RQ output arbitration = 16
+ 	 */
+ 	writel(0x101010, &regs->arbitration_ctrl);
+ 	/* Request Queued Limitation for REQ8/9 USB1/2 */
+ 	writel(0x0FFF3CEF, &regs->req_limit_mask);
+ 
+-
+ 	for (i = 0; i < ARRAY_SIZE(ddr_max_grant_params); ++i)
+-                writel(ddr_max_grant_params[i], &regs->max_grant_len[i]);
++		writel(ddr_max_grant_params[i], &regs->max_grant_len[i]);
+ 
+-        writel(MCR50_RESET_ALL_INTR, &regs->intr_ctrl);
++	writel(MCR50_RESET_ALL_INTR, &regs->intr_ctrl);
+ 
+-        /* FIXME: the sample code does NOT match the datasheet */
+-        writel(0x07FFFFFF, &regs->ecc_range_ctrl);
++	/* FIXME: the sample code does NOT match the datasheet */
++	writel(0x07FFFFFF, &regs->ecc_range_ctrl);
+ 
+-        writel(0, &regs->ecc_test_ctrl);
+-        writel(0x80000001, &regs->test_addr);
+-        writel(0, &regs->test_fail_dq_bit);
+-        writel(0, &regs->test_init_val);
++	writel(0, &regs->ecc_test_ctrl);
++	writel(0x80000001, &regs->test_addr);
++	writel(0, &regs->test_fail_dq_bit);
++	writel(0, &regs->test_init_val);
+ 
+ 	writel(0xFFFFFFFF, &regs->req_input_ctrl);
+ 	writel(0x300, &regs->req_high_pri_ctrl);
+ 
+-        udelay(600);
++	udelay(600);
+ 
+ #ifdef CONFIG_ASPEED_DDR4_DUALX8
+ 	writel(0xa037, &regs->config);
+@@ -889,7 +902,7 @@
+ 
+ 	/* find SCU base address from clock device */
+ 	ret = uclass_get_device_by_driver(UCLASS_CLK, DM_GET_DRIVER(aspeed_scu),
+-                                          &clk_dev);
++					  &clk_dev);
+ 	if (ret) {
+ 		debug("clock device not defined\n");
+ 		return ret;
+@@ -901,7 +914,8 @@
+ 		return PTR_ERR(priv->scu);
+ 	}
+ 
+-	if (readl(priv->scu + AST_SCU_HANDSHAKE) & SCU_SDRAM_INIT_READY_MASK) {
++	reg = readl(priv->scu + AST_SCU_HANDSHAKE);
++	if (reg & SCU_SDRAM_INIT_READY_MASK) {
+ 		printf("already initialized, ");
+ 		setbits_le32(priv->scu + AST_SCU_HANDSHAKE, SCU_HANDSHAKE_MASK);
+ 		ast2600_sdrammc_update_size(priv);
+@@ -913,11 +927,12 @@
+ 	reg &= ~(BIT(24) | GENMASK(22, 0));
+ 	reg |= (BIT(25) | BIT(23) | SCU_MPLL_FREQ_CFG);
+ 	writel(reg, priv->scu + AST_SCU_MPLL);
+-        writel(SCU_MPLL_EXT_CFG, priv->scu + AST_SCU_MPLL_EXT);
++	writel(SCU_MPLL_EXT_CFG, priv->scu + AST_SCU_MPLL_EXT);
+ 	udelay(100);
+ 	reg &= ~(BIT(25) | BIT(23));
+ 	writel(reg, priv->scu + AST_SCU_MPLL);
+-	while(0 == (readl(priv->scu + AST_SCU_MPLL_EXT) & BIT(31)));
++	while (0 == (readl(priv->scu + AST_SCU_MPLL_EXT) & BIT(31)))
++		;
+ #else
+ 	ret = clk_get_by_index(dev, 0, &priv->ddr_clk);
+ 	if (ret) {
+@@ -949,15 +964,16 @@
+ 	ast2600_sdrammc_init_ddr4(priv);
+ 
+ #if defined(CONFIG_FPGA_ASPEED) || defined(CONFIG_ASPEED_PALLADIUM)
+-        ast2600_sdrammc_search_read_window(priv);
++	ast2600_sdrammc_search_read_window(priv);
+ #else
+ 	/* make sure DDR-PHY is ready before access */
+ 	do {
+ 		reg = readl(priv->phy_status) & BIT(1);
+-	} while(reg == 0);
++	} while (reg == 0);
+ #endif
+ 
+-	if (0 != ast2600_sdramphy_check_status(priv)) {
++	ret = ast2600_sdramphy_check_status(priv);
++	if (ret) {
+ 		printf("DDR4 PHY training fail, retrain\n");
+ 		goto L_ast2600_sdramphy_train;
+ 	}
+@@ -965,7 +981,8 @@
+ 	ast2600_sdrammc_calc_size(priv);
+ 
+ #ifndef CONFIG_ASPEED_BYPASS_SELFTEST
+-        if (0 != ast2600_sdrammc_test(priv)) {
++	ret = ast2600_sdrammc_test(priv);
++	if (ret) {
+ 		printf("%s: DDR4 init fail\n", __func__);
+ 		return -EINVAL;
+ 	}
+diff -Naur  uboot_org/drivers/ram/aspeed/sdram_phy_ast2600.h uboot/drivers/ram/aspeed/sdram_phy_ast2600.h
+--- uboot_org/drivers/ram/aspeed/sdram_phy_ast2600.h	2020-11-20 17:00:27.000000000 +0800
++++ uboot/drivers/ram/aspeed/sdram_phy_ast2600.h	2022-08-09 12:13:58.078343910 +0800
+@@ -1,6 +1,35 @@
+ #define DDR_PHY_TBL_CHG_ADDR            0xaeeddeea
+ #define DDR_PHY_TBL_END                 0xaeededed
+ 
++/**
++ * phyr030[10:8] - ODT configuration (PHY side)
++ *   b'000 : ODT disabled
++ *   b'100 : 60 ohm
++ *   b'101 : 48 ohm
++ *   b'110 : 40 ohm (default)
++ */
++#if defined(CONFIG_ASPEED_DDR4_PHY_ODT60)
++#define PHY_ODT			(0x4 << 8)
++#elif defined(CONFIG_ASPEED_DDR4_PHY_ODT48)
++#define PHY_ODT			(0x5 << 8)
++#else
++#define PHY_ODT			(0x6 << 8)
++#endif
++
++/**
++ * phyr058[10:8] - ODT configuration (DRAM side)
++ *   b'001 : 60 ohm
++ *   b'101 : 48 ohm
++ *   b'011 : 40 ohm (default)
++ */
++#if defined(CONFIG_ASPEED_DDR4_DRAM_ODT60)
++#define DRAM_ODT			(0x1 << 8)
++#elif defined(CONFIG_ASPEED_DDR4_DRAM_ODT48)
++#define DRAM_ODT			(0x5 << 8)
++#else
++#define DRAM_ODT			(0x3 << 8)
++#endif
++
+ #if defined(CONFIG_ASPEED_DDR4_800)
+ u32 ast2600_sdramphy_config[165] = {
+ 	0x1e6e0100,	// start address
+@@ -16,7 +45,7 @@
+ 	0x20000000,	// phyr024
+ 	0x00000008,	// phyr028
+ 	0x00000000,	// phyr02c
+-	0x00077600,	// phyr030
++	(0x00077000 | PHY_ODT),	// phyr030
+ 	0x00000000,	// phyr034
+ 	0x00000000,	// phyr038
+ 	0x20000000,	// phyr03c
+@@ -26,7 +55,7 @@
+ 	0x00003080,	// phyr04c
+ 	0x04000000,	// phyr050
+ 	0x00000200,	// phyr054
+-	0x03140201,	// phyr058
++	(0x03140001 | DRAM_ODT),	// phyr058
+ 	0x04800000,	// phyr05c
+ 	0x0800044e,	// phyr060
+ 	0x00000000,	// phyr064
+@@ -184,7 +213,7 @@
+ 	0x20000000,	// phyr024
+ 	0x00000008,	// phyr028
+ 	0x00000000,	// phyr02c
+-	0x00077600,	// phyr030
++	(0x00077000 | PHY_ODT),	// phyr030
+ 	0x00000000,	// phyr034
+ 	0x00000000,	// phyr038
+ 	0x20000000,	// phyr03c
+@@ -194,7 +223,7 @@
+ 	0x00003080,	// phyr04c
+ 	0x04000000,	// phyr050
+ 	0x00000200,	// phyr054
+-	0x03140501,	// phyr058-rtt:40
++	(0x03140001 | DRAM_ODT),	// phyr058
+ 	0x04800000,	// phyr05c
+ 	0x0800044e,	// phyr060
+ 	0x00000000,	// phyr064

@@ -1,0 +1,77 @@
+diff -Naur busybox_org/networking/ifupdown.c busybox/networking/ifupdown.c
+--- busybox_org/networking/ifupdown.c	2022-09-22 15:29:56.076133582 +0800
++++ busybox/networking/ifupdown.c	2022-09-22 15:30:31.208544704 +0800
+@@ -637,7 +637,6 @@
+ {
+ 	int result = 0;
+ 	unsigned i;
+-
+ 	for (i = 0; i < ARRAY_SIZE(ext_dhcp_clients); i++) {
+ 		if (exists_execable(ext_dhcp_clients[i].name)) {
+ 			result = execute(ext_dhcp_clients[i].stopcmd, ifd, exec);
+@@ -1226,6 +1225,8 @@
+ 	llist_t *target_list = NULL;
+ 	const char *interfaces = "/etc/network/interfaces";
+ 	bool any_failures = 0;
++	char iface_family[16] = { 0 };
++	FILE *fp = NULL;
+ 
+ 	INIT_G();
+ 
+@@ -1238,6 +1239,21 @@
+ 		cmds = iface_up;
+ 	}
+ 
++	memset(iface_family, 0, sizeof(iface_family));
++	fp = fopen("/tmp/iface_family", "r+");
++	if (fp== NULL) {
++		debug_noise("Use default\n");
++	} // if
++	else {
++		if(fread(iface_family,sizeof(iface_family),1,fp)) {
++			debug_noise("Cannot open file. Use default\n");
++			memset(iface_family, 0, sizeof(iface_family));
++		} // if
++
++		fclose(fp);
++		fp = NULL;
++	} // else
++
+ 	getopt32(argv, OPTION_STR, &interfaces);
+ 	argv += optind;
+ 	if (argv[0]) {
+@@ -1320,14 +1336,14 @@
+ 		iface_list = defn->ifaces;
+ 		while (iface_list) {
+ 			currif = (struct interface_defn_t *) iface_list->data;
+-			if (strcmp(liface, currif->iface) == 0) {
++			if ((strcmp(liface, currif->iface) == 0 && ( strlen(iface_family) > 0 && strncmp(iface_family, currif->address_family->name,sizeof(iface_family)) == 0 ))
++				|| (strcmp(liface, currif->iface) == 0 && strlen(iface_family) == 0)) {
+ 				char *oldiface = currif->iface;
+ 
+ 				okay = 1;
+ 				currif->iface = iface;
+ 
+ 				debug_noise("\nConfiguring interface %s (%s)\n", liface, currif->address_family->name);
+-
+ 				/* Call the cmds function pointer, does either iface_up() or iface_down() */
+ 				cmds_ret = cmds(currif);
+ 				if (cmds_ret == -1) {
+diff -Naur busybox_org/networking/udhcp/dhcpc.c busybox/networking/udhcp/dhcpc.c
+--- busybox_org/networking/udhcp/dhcpc.c	2022-09-22 15:29:56.076133582 +0800
++++ busybox/networking/udhcp/dhcpc.c	2022-09-22 15:30:24.984473920 +0800
+@@ -1061,8 +1061,13 @@
+ 	sock.sll_family = AF_PACKET;
+ 	sock.sll_protocol = htons(ETH_P_IP);
+ 	sock.sll_ifindex = ifindex;
+-	xbind(fd, (struct sockaddr *) &sock, sizeof(sock));
+ 
++	// xbind(fd, (struct sockaddr *) &sock, sizeof(sock));
++	if (bind(fd, (struct sockaddr *) &sock, sizeof(sock)) < 0) {
++		log1("bind fails. errno = %u\n",errno ); //log2?
++		return -1;
++	} // if
++	
+ 	if (CLIENT_PORT == 68) {
+ 		/* Use only if standard port is in use */
+ 		/* Ignoring error (kernel may lack support for this) */

@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+
+# FileName		: ncmlupdate_cfg
+# Author		: NealChen (nealchen@ami.com.tw)
+# Description	: This script will update the ncml.conf file in building time
+#				by comparing the latest values of core_macros, which are taken through the commandline
+#				and the previous values of KVM MaxSessionInactivityTimeout in the ncml.conf file
+#
+import os, sys
+import shutil
+
+#main module
+usage = "usage: %s ncml.conf option(1 - kvm) core_macro1 core_macro2" %         os.path.basename(sys.argv[0])
+
+if (len(sys.argv) != 5):
+	print(usage)
+	sys.exit(0)
+
+if( os.path.isfile(sys.argv[1])):
+	ncml_file = sys.argv[1]
+else:
+	print (usage)
+	sys.exit(0)
+
+def return_session_timeout_line(service_name,param):
+	output = open(ncml_file,'r')
+
+	for num, line in enumerate(output,1):
+		if service_name in line:
+			for j, line in enumerate(output,num):
+				if param in line:
+					output.close()
+					return j
+	output.close()
+	return 0
+
+
+if (int(sys.argv[2],16) == 1): #KVM session_timeout
+	if (sys.argv[3] == "YES"):
+		i =return_session_timeout_line("[kvm]","session_timeout")
+		if i >= 0:
+			with open(ncml_file, 'r') as output:
+				lines = output.readlines()
+			lines[i] = ("%s=%d\n" % ("session_timeout", int(sys.argv[4],16) ) )
+			with open(ncml_file, 'w') as output:
+				output.writelines(lines)
+
+if (int(sys.argv[2],16) == 2): #SSH session_timeout
+	if (sys.argv[3] == "YES"):
+		i =return_session_timeout_line("[ssh]","session_timeout")
+		if i >= 0:
+			with open(ncml_file, 'r') as output:
+				lines = output.readlines()
+			lines[i] = ("%s=%d\n" % ("session_timeout", int(sys.argv[4],16) ) )
+			with open(ncml_file, 'w') as output:
+				output.writelines(lines)
+
+if (int(sys.argv[2],16) == 3): #Web session_timeout
+	if (sys.argv[3] == "YES"):
+		i = return_session_timeout_line("[web]","session_timeout")
+		if i >= 0:
+			with open(ncml_file, 'r') as output:
+				lines = output.readlines()
+			lines[i] = ("%s=%d\n" % ("session_timeout", int(sys.argv[4],16) ) )
+			with open(ncml_file, 'w') as output:
+				output.writelines(lines)
+
+#end of main module

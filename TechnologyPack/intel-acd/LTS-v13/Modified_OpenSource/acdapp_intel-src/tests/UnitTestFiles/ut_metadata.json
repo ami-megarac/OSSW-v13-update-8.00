@@ -1,0 +1,127 @@
+{
+  "cpu": "spr",
+  "AccessMethod":  "/dev/peci-wire",
+  "Version": "release",
+  "ServiceName": "crashdump",
+  "PECIHeaders": {
+    "Ping": ["Target"],
+    "GetCPUID": ["Target"],
+    "RdPkgConfig": ["Target", "Index", "Parameter", "ReadLen"],
+    "RdEndpointConfigPCILocal": ["Target", "Seg", "Bus", "Dev", "Func", "Reg", "ReadLen"],
+    "RdEndpointConfigMMIO": ["Target", "Seg", "Bus", "Dev", "Func", "Bar", "AType", "Reg", "ReadLen"],
+    "RdIAMSR": ["Target", "Thread", "Address"]
+  },
+  "DefaultState": "Enable",
+  "UseSections": true,
+  "MaxTimeInSec": 700,
+  "Sections": [
+    {
+      "Metadata_Cpu": {
+        "RecordEnable": true,
+        "RecordType": "0xb",
+        "ProductType": "0x1c",
+        "Revision": "0x01",
+        "SkipOnFail": false,
+        "LoopOnCpu": true,
+        "MaxTimeSec": 10,
+        "RootAtLevel": 2,
+        "OutputPath": "crash_data/METADATA/cpu%d",
+        "PreReq": {
+          "PECICmds": [
+            {
+              "RdPkgConfig": [
+                {"Params": ["Target", 19, 1, 4], "InternalVar": "ppin_low"},
+                {"Params": ["Target", 19, 2, 4], "InternalVar": "ppin_high"}
+              ]
+            },
+            {
+              "RdEndpointConfigPCILocal": [
+                {"Params": ["Target", 0, 31, 30, 4, "0xF8", 4], "InternalVar": "firstierrtsc_low"},
+                {"Params": ["Target", 0, 31, 30, 4, "0xFC", 4], "InternalVar": "firstierrtsc_high"},
+                {"Params": ["Target", 0, 31, 30, 4, "0xF0", 4], "InternalVar": "firstmcerrtsc_low"},
+                {"Params": ["Target", 0, 31, 30, 4, "0xF4", 4], "InternalVar": "firstmcerrtsc_high"},
+                {"Params": ["Target", 0, 31, 30, 3, "0x9c", 4], "InternalVar": "chamask0"},
+                {"Params": ["Target", 0, 31, 30, 3, "0xa0", 4], "InternalVar": "chamask1"}
+              ]
+            }
+          ]
+        },
+        "PECICmds": [
+          {
+            "RdGlobalVars": [
+              {"Params": ["peci_addr"], "Output": {"Name": ["peci_id"]}},
+              {"Params": ["cpuid"], "Output": {"Name": ["cpuid"]}},
+              {"Params": ["cpuid_source"], "Output": {"Name": ["_cpuid_source"]}},
+              {"Params": ["coremask_source"], "Output": {"Name": ["_core_mask_source"]}},
+              {"Params": ["chacount_source"], "Output": {"Name": ["_cha_count_source"]}},
+              {"Params": ["coremask"], "Output": {"Name": ["core_mask"]}},
+              {"Params": ["chacount"], "Output": {"Name": ["cha_count"]}},
+              {"Params": ["corecount"], "Output": {"Name": ["core_count"]}},
+              {"Params": ["crashcorecount"], "Output": {"Name": ["crashcore_count"]}},
+              {"Params": ["crashcoremask"], "Output": {"Name": ["crashcore_mask"]}}
+            ]
+          },
+          {
+            "SaveStrVars":[
+              {"Params":["N/A"],"Output":{"Name":["package_id"]}}
+            ]
+          },
+          {
+            "RdAndConcatenate": [
+              {"Params": ["chamask0", "chamask1"], "Output": {"Size": 8,"Name": ["cha_mask"]}},
+              {"Params": ["ppin_low", "ppin_high"], "Output": {"Size": 8,"Name": ["ppin"], "ZeroPadded": true}},
+              {"Params": ["firstierrtsc_low", "firstierrtsc_high"], "Output": {"Size": 8,"Name": ["firstierrtsc"]}},
+              {"Params": ["firstmcerrtsc_low", "firstmcerrtsc_high"], "Output": {"Size": 8,"Name": ["firstmcerrtsc"]}}
+            ]
+          },
+          {
+            "RdEndpointConfigPCILocal": [
+              {"Params": ["Target", 0, 30, 0, 0, "0xA4", 4], "Output": {"Name": ["ierrloggingreg"]}},
+              {"Params": ["Target", 0, 30, 0, 0, "0xA8", 4], "Output": {"Name": ["mcerrloggingreg"]}},
+              {"Params": ["Target", 0, 31, 30, 2, "0xEC", 4], "Output": {"Name": ["mca_err_src_log"]}}
+            ]
+          },
+          {
+            "RdPkgConfig": [
+              {"Params": ["Target", 0, 4, 4],"Output": {"Name":["ucode_patch_ver"]}},
+              {"Params": ["Target", 0, 1, 4],"Output": {"Name":["platform_id"]}}
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "NVD": {
+    "dimm_masks_auto_discovery": false,
+    "dimm_masks": ["0x0", "0x0"],
+    "csr": {
+      "_record_enable": true,
+      "header_info": ["reg_name", "device", "function", "offset"],
+      "reg_list": [
+        ["vendor_device_id", 24, 6, "0x8"],
+        ["revision_mfg_id", 24, 6, "0xC"],
+        ["d_fw_status", 4, 6, "0x0"],
+        ["d_fw_status_h", 4, 6, "0x4"],
+        ["fw_misc_0", 0, 6, "0x030"],
+        ["fw_misc_1", 0, 6, "0x034"],
+        ["fw_misc_2", 0, 6, "0x038"],
+        ["fw_misc_3", 0, 6, "0x03C"],
+        ["fw_misc_4", 0, 6, "0x040"],
+        ["fw_misc_5", 0, 6, "0x044"],
+        ["fw_misc_6", 0, 6, "0x048"],
+        ["fw_misc_7", 0, 6, "0x04C"]
+      ]
+    },
+    "error_log": {
+      "_record_enable": true,
+      "header_info": ["log_name", "log_type", "log_level", "max_seq_num"],
+      "log_list": [
+        ["media_log_high_priority", 0, 1, 1],
+        ["thermal_log_high_priority", 1, 1, 1]
+      ]
+    },
+    "smart_health_info": {
+      "_record_enable": true
+    }
+  }
+}

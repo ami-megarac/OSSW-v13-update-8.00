@@ -1,0 +1,28 @@
+--- busybox-1.21.1/coreutils/date.c	2013-05-11 19:30:43.000000000 -0400
++++ busybox-1.21.1/coreutils/date.c	2022-03-22 23:52:51.334047962 -0400
+@@ -170,6 +170,16 @@
+ 		;
+ #endif
+ 
++
++/* replacement for deprecated stime() */
++static int dep_stime(const time_t *t)
++{
++    struct timeval tv;
++    tv.tv_sec = *t;
++    tv.tv_usec = 0;
++    return settimeofday(&tv, NULL);
++}
++
+ int date_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int date_main(int argc UNUSED_PARAM, char **argv)
+ {
+@@ -293,7 +303,7 @@
+ 		maybe_set_utc(opt);
+ 
+ 		/* if setting time, set it */
+-		if ((opt & OPT_SET) && stime(&ts.tv_sec) < 0) {
++		if ((opt & OPT_SET) && dep_stime(&ts.tv_sec) < 0) {
+ 			bb_perror_msg("can't set date");
+ 		}
+ 	}

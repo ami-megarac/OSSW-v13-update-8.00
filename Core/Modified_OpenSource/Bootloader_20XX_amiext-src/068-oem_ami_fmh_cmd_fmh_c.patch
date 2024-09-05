@@ -1,0 +1,11 @@
+--- uboot_org/oem/ami/fmh/cmd_fmh.c	2022-11-30 15:53:13.583515412 +0800
++++ uboot/oem/ami/fmh/cmd_fmh.c	2022-11-30 15:53:40.891111979 +0800
+@@ -209,7 +209,7 @@
+ 		*(volatile u32 *)(0x1e789000 + 0x100) &= ~(0x40);
+ 		*(volatile u32 *)(0x1e6e2000 + 0x7C) = (0x100000);
+ 	}
+-	*(volatile u32 *)(0x1e6e2000) = 0;
++	//*(volatile u32 *)(0x1e6e2000) = 0;
+ 	
+ 	reg = *(volatile u32 *)(0x1E6E2000 + 0x180);
+ 	if (reg & 0x2)

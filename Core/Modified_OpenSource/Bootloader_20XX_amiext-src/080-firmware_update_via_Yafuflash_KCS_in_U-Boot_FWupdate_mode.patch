@@ -1,0 +1,107 @@
+diff -Naur uboot_old/include/oem/ami/fmh/fmh.h uboot_new/include/oem/ami/fmh/fmh.h
+--- uboot_old/include/oem/ami/fmh/fmh.h	2024-06-14 16:03:10.791713526 +0530
++++ uboot_new/include/oem/ami/fmh/fmh.h	2024-06-18 20:22:29.440634991 +0530
+@@ -143,7 +143,7 @@
+ void	CreateFMH(FMH *fmh,UINT32 AllocatedSize, MODULE_INFO *mod);
+ void 	CreateAlternateFMH(ALT_FMH *altfmh,UINT32 FMH_Offset);
+ extern int get_flash_macro(char *property,char *value);
+-extern int get_uboot_macro(char *property,char *value);
++extern int get_uboot_macro(char *property,char *value,int BufferSize);
+ extern int get_conf_macro(char *property,char *value);
+ // #ifdef CONFIG_SPX_FEATURE_BMC_FIRMWARE_AUTO_RECOVERY
+ FMH* 	ScanforFMH_RAM(unsigned char *SectorAddr, unsigned long SectorSize);
+diff -Naur uboot_old/oem/ami/fdt/cmdfdt.c uboot_new/oem/ami/fdt/cmdfdt.c
+--- uboot_old/oem/ami/fdt/cmdfdt.c	2024-06-14 16:03:10.923712163 +0530
++++ uboot_new/oem/ami/fdt/cmdfdt.c	2024-06-18 20:20:22.826195439 +0530
+@@ -88,11 +88,12 @@
+       }
+ 	return -1;
+ }
+-int get_uboot_macro(char *property,char *value)
++int get_uboot_macro(char *property,char *value, int BufferSize)
+ {
+ 	int  nodeoffset;	/* node offset from libfdt */
+ 	int  len = 0;		/* new length of the property */
+ 	const void *nodep;	/* property node pointer */
++	int ret = 0;
+ 	if(load_fdt() == 0)
+ 	{
+ 		nodeoffset = fdt_path_offset(working_fdt, "/ami_macros/uboot-macros");
+@@ -110,7 +111,10 @@
+ 				/* no property value */
+ 				return -1;
+ 			}
+-		snprintf(value,len, "%s",(char*)nodep);
++		ret = snprintf(value, BufferSize, "%08X", fdt32_to_cpu(*(fdt32_t *)nodep));
++		if ((ret < 0) || ret >= BufferSize) {
++			printf("Encoding error occurred\n");
++		}
+ 		return 0;
+ 	}
+ 	return -1;
+diff -Naur uboot_old/oem/ami/fwupdate/fwupdate.c uboot_new/oem/ami/fwupdate/fwupdate.c
+--- uboot_old/oem/ami/fwupdate/fwupdate.c	2024-06-14 16:03:10.923712163 +0530
++++ uboot_new/oem/ami/fwupdate/fwupdate.c	2024-06-18 20:25:39.926290910 +0530
+@@ -397,7 +397,7 @@
+             printf(" read fail from get_flash_macro \n");
+ 	    return -ENODEV;
+     }
+-    if(get_uboot_macro("global-uboot-env-start",gb_uboot_env_start) == 0)
++    if(get_uboot_macro("global-uboot-env-start",gb_uboot_env_start,sizeof(gb_uboot_env_start)) == 0)
+     {
+             gb_uboot_env_start_long = simple_strtoull(gb_uboot_env_start, NULL, MAX_FLASH_SIZE);
+     }
+@@ -406,7 +406,7 @@
+             printf(" read fail from get_uboot_macro \n");
+ 	    return -ENODEV;
+     }
+-    if(get_uboot_macro("global-uboot-env-size",gb_uboot_env_size) == 0)
++    if(get_uboot_macro("global-uboot-env-size",gb_uboot_env_size,sizeof(gb_uboot_env_size)) == 0)
+     {
+             gb_uboot_env_size_long = simple_strtoull(gb_uboot_env_size, NULL, MAX_FLASH_SIZE);
+     }
+diff -Naur uboot_old/oem/ami/ipmi/cmdhandler.c uboot_new/oem/ami/ipmi/cmdhandler.c
+--- uboot_old/oem/ami/ipmi/cmdhandler.c	2024-06-14 16:03:10.923712163 +0530
++++ uboot_new/oem/ami/ipmi/cmdhandler.c	2024-06-18 20:34:20.571697785 +0530
+@@ -84,7 +84,7 @@
+      unsigned long gb_uboot_env_start_long=0;
+      char gb_uboot_env_start[MAX_FLASH_SIZE];
+      memset(gb_uboot_env_start,0,sizeof(gb_uboot_env_start));
+-     if(get_uboot_macro("global-uboot-env-start",gb_uboot_env_start) == 0)
++     if(get_uboot_macro("global-uboot-env-start",gb_uboot_env_start,sizeof(gb_uboot_env_start)) == 0)
+      {
+ 	     gb_uboot_env_start_long = simple_strtoull(gb_uboot_env_start, NULL, MAX_FLASH_SIZE);
+      }
+@@ -716,17 +716,17 @@
+     struct spi_flash *flash;
+     int retval = -1;
+ 	
+-    unsigned long gb_erase_block_size_long=0;
+-    char erase_blaock_size[MAX_FLASH_SIZE];
+-    memset(erase_blaock_size,0,sizeof(erase_blaock_size));
+-    if(get_flash_macro("global-erase-block-size",erase_blaock_size) == 0)
++    unsigned long gb_used_flash_size_long=0;
++    char gb_used_flash_size[MAX_FLASH_SIZE] = {0};
++    memset(gb_used_flash_size,0,sizeof(gb_used_flash_size));
++    if(get_flash_macro("global-used-flash-size",gb_used_flash_size) == 0)
+     {
+-            gb_erase_block_size_long=simple_strtoull(erase_blaock_size, NULL, MAX_FLASH_SIZE);
++           gb_used_flash_size_long = simple_strtoull(gb_used_flash_size, NULL, MAX_FLASH_SIZE);
+     }
+     else
+     {
+             printf(" read fail from get_flash_macro \n");
+-	    return -ENODEV;
++            return -ENODEV;
+     }
+ 
+ if(ActivateFlashStatus == 0x01)
+@@ -770,7 +770,7 @@
+             hang();
+         }
+ 
+-     retval = spi_flash_protect (flash, CONFIG_ENV_SPI_CS, gb_erase_block_size_long, 0);
++     retval = spi_flash_protect (flash, CONFIG_ENV_SPI_CS, gb_used_flash_size_long, 0);
+      if ((0 != retval) && (-EOPNOTSUPP != retval))
+      {
+ 	   AMIYAFUNotAck* pAMIYAFUNotAcknowledge =(AMIYAFUNotAck*)pRes;

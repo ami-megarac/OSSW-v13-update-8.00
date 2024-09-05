@@ -1,0 +1,11 @@
+{
+    "METADATA":{},
+    "TOR":{},
+    "uncore": {
+        "B00_D00_F1_0x144":"IIO Bandwidth Counter"
+    },
+    "MCA": {},
+    "PM_info": {},
+    "address_map": {},
+    "big_core": {}
+}

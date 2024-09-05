@@ -1,0 +1,10 @@
+--- uboot/drivers/pinctrl/aspeed/pinctrl_ast2600.c	2023-07-14 14:39:38.580499734 +0800
++++ uboot-new/drivers/pinctrl/aspeed/pinctrl_ast2600.c	2023-07-18 16:56:17.422510632 +0800
+@@ -202,7 +202,6 @@
+ 	{ 0x510, BIT(1), 0         },
+ 	{ 0x410, GENMASK(31, 28), 1	},
+ 	{ 0x4b0, GENMASK(31, 28), 0	},
+-	{ 0x474, GENMASK(7, 0), 1	},
+ 	{ 0x414, GENMASK(7, 0), 1	},
+ 	{ 0x4b4, GENMASK(7, 0), 0	},
+ };

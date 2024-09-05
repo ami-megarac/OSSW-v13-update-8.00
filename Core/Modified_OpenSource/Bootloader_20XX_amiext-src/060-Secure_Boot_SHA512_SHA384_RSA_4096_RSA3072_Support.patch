@@ -1,0 +1,435 @@
+diff -Naur  uboot_org/lib/rsa/rsa-mod-exp.c uboot/lib/rsa/rsa-mod-exp.c
+--- uboot_org/lib/rsa/rsa-mod-exp.c	2022-07-25 11:39:19.817483717 +0800
++++ uboot/lib/rsa/rsa-mod-exp.c	2022-07-26 14:52:53.228937644 +0800
+@@ -11,6 +11,7 @@
+ #include <linux/errno.h>
+ #include <asm/types.h>
+ #include <asm/unaligned.h>
++#include <dm.h>
+ #else
+ #include "fdt_host.h"
+ #include "mkimage.h"
+@@ -29,39 +30,13 @@
+ /* Default public exponent for backward compatibility */
+ #define RSA_DEFAULT_PUBEXP	65537
+ 
+-
+-static const uint8_t padding_sha256_rsa2048[RSA2048_BYTES - SHA256_SUM_LEN] = {
+-        0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-        0xff, 0xff, 0xff, 0xff, 0x00, 0x30, 0x31, 0x30,
+-        0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65,
+-        0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20
+-};
+-
+-
++#ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_HASH_SHA512
++#define HASH_TYPE "sha512"
++#elif defined(CONFIG_SPX_FEATURE_SECURE_BOOT_HASH_SHA384)
++#define HASH_TYPE "sha384"
++#else
++#define HASH_TYPE "sha256"
++#endif
+ /**
+  * subtract_modulus() - subtract modulus from the given value
+  *
+@@ -320,94 +295,111 @@
+         return val;
+ }
+ 
+-static int rsa_verify_key_SHA256(const struct rsa_public_key *key, const uint8_t *sig,
+-                                                 const uint32_t sig_len, const uint8_t *hash, const uint32_t hash_len)
+-{
+-        const uint8_t *padding;
+-        int pad_len;
+-        int ret;
+-        if (!key || !sig || !hash)
+-                return -EIO;
+-
+-        if (sig_len != (key->len * sizeof(uint32_t))) {
+-                printf("Signature is of incorrect length %d\n", sig_len);
+-                return -EINVAL;
+-        }
+-
+-        /* Sanity check for stack size */
+-        if (sig_len > RSA_MAX_SIG_BITS / 8) {
+-                printf("Signature length %u exceeds maximum %d\n", sig_len,
+-                      RSA_MAX_SIG_BITS / 8);
+-                return -EINVAL;
+-        }
+-
+-        uint32_t buf[sig_len / sizeof(uint32_t)];
+-
+-        memcpy(buf, sig, sig_len);
+-
+-        ret = pow_mod(key, buf);
+-        if (ret){
+-                printf("error in pow_mod in rsa_verify_key\n");
+-                return ret;
+-        }
+-        
+-        padding = padding_sha256_rsa2048;
+-        pad_len = RSA2048_BYTES - SHA256_SUM_LEN;
++static int rsa_verify_key(
++			  struct key_prop *prop, const uint8_t *sig,
++			  const uint32_t sig_len, const uint8_t *hash,
++			  const uint32_t key_len)
++{
++	struct image_sign_info info;
++	
++	info.checksum = image_get_checksum_algo(HASH_TYPE",");	
++	switch(key_len)
++	{
++		case 2048:
++			info.crypto = image_get_crypto_algo("rsa2048");
++			break;
++		case 3072:
++			info.crypto = image_get_crypto_algo("rsa3072");
++			break;
++		case 4096:
++			info.crypto = image_get_crypto_algo("rsa4096");
++			break;
++	}
++	info.padding = image_get_padding_algo(RSA_DEFAULT_PADDING_NAME);
++	int ret;
++#if !defined(USE_HOSTCC)
++	struct udevice *mod_exp_dev;
++#endif
++	struct checksum_algo *checksum = info.checksum;
++	struct padding_algo *padding = info.padding;
++	int hash_len;
++
++	if (!prop || !sig || !hash || !checksum)
++		return -EIO;
++	if (sig_len != (prop->num_bits / 8)) {
++		printf("Signature is of incorrect length %d\n", sig_len);
++		return -EINVAL;
++	}
+ 
+-        /* Check pkcs1.5 padding bytes. */
+-        if (memcmp(buf, padding, pad_len)) {
+-                printf("In RSAVerify(): Padding check failed!\n");
+-              return -EINVAL;
+-        }
++	debug("Checksum algorithm: %s", checksum->name);
+ 
+-        /* Check hash. */
+-        if (memcmp((uint8_t *)buf + pad_len, hash, sig_len - pad_len)) {
+-                printf("In RSAVerify(): Hash check failed!\n");
+-                return -EACCES;
+-        }
+-        return 0;
++	/* Sanity check for stack size */
++	if (sig_len > RSA_MAX_SIG_BITS / 8) {
++		printf("Signature length %u exceeds maximum %d\n", sig_len,
++		      RSA_MAX_SIG_BITS / 8);
++		return -EINVAL;
++	}
++	uint8_t buf[sig_len];
++	hash_len = checksum->checksum_len;
++	memset(buf,0,sizeof(buf));
++#if !defined(USE_HOSTCC)
++	ret = uclass_get_device(UCLASS_MOD_EXP, 0, &mod_exp_dev);
++	if (ret) {
++		printf("RSA: Can't find Modular Exp implementation\n");
++		return -EINVAL;
++	}
++	ret = rsa_mod_exp(mod_exp_dev, sig, sig_len, prop, buf);
++#else
++	ret = rsa_mod_exp_sw(sig, sig_len, prop, buf);
++#endif
++	if (ret) {
++		debug("Error in Modular exponentation\n");
++		return ret;
++	}
++	ret = padding->verify(&info, buf, key_len, hash, hash_len);
++	if (ret) {
++		debug("In RSAVerify(): padding check failed!\n");
++		return ret;
++	}
++	return 0;
+ }
+ 
+ int rsa_get_pub_key_uboot_verify(const char *key_val, unsigned char *enc_hash,
+                                                   unsigned int enc_hash_len, unsigned char *hash, unsigned int hash_len)
+ {
+-        struct rsa_public_key key;
+-        const void *modulus, *rr;
++        struct key_prop key;
+         uint32_t hash_copy[16]={0};  
+         int ret, p;
+         
+-        key.len = read_prop(key_val, 256, 2);
++        key.exp_len = read_prop(key_val, 256, 2);
+         key.n0inv = read_prop(key_val, 100, 4);
+-        modulus = &key_val[512]; 
+-        rr = &key_val[1024]; 
++        key.num_bits = read_prop(key_val, 256, 2);
++        key.public_exponent=NULL;
+ 
+         /* Sanity check for stack size */
+-        if (key.len > RSA_MAX_KEY_BITS || key.len < RSA_MIN_KEY_BITS) {
++        if (key.exp_len > RSA_MAX_KEY_BITS || key.exp_len < RSA_MIN_KEY_BITS) {
+                 debug("RSA key bits %u outside allowed range %d..%d\n",
+-                      key.len, RSA_MIN_KEY_BITS, RSA_MAX_KEY_BITS);
++                      key.exp_len, RSA_MIN_KEY_BITS, RSA_MAX_KEY_BITS);
+                 return -EFAULT;
+         }
+ 
+-        key.len /= sizeof(uint32_t) * 8;
+-        uint32_t key1[key.len], key2[key.len];
+-        key.modulus = key1;
+-        key.rr = key2;
+-        rsa_convert_big_endian(key.modulus, modulus, key.len);
+-        rsa_convert_big_endian(key.rr, rr, key.len);
++        key.exp_len /=8;
++        key.modulus = &key_val[512]; 
++        key.rr = &key_val[1024]; 
+ 
+         if (!key.modulus || !key.rr) {
+                 debug("%s: Out of memory", __func__);
+                 return -ENOMEM;
+         }
+ 
+-        debug("key length %d\n", key.len);
++        debug("key length %d\n", key.exp_len);
+ 
+         for(p=0; p < hash_len/sizeof(uint32_t); p++)
+         {
+                 hash_copy[p] = *(((uint32_t *)(hash))+p);
+         }
+ 
+-        ret = rsa_verify_key_SHA256(&key, enc_hash, enc_hash_len, (uint8_t *)(hash_copy), hash_len);
++		ret = rsa_verify_key(&key, enc_hash, enc_hash_len, (uint8_t *)(hash_copy),key.exp_len);        
+ 
+         if (ret) {
+                 printf("%s: RSA failed to verify: %d\n", __func__, ret);
+diff -Naur  uboot_org/oem/ami/fmh/hrotcore.c uboot/oem/ami/fmh/hrotcore.c
+--- uboot_org/oem/ami/fmh/hrotcore.c	2022-07-25 15:45:33.868587572 +0800
++++ uboot/oem/ami/fmh/hrotcore.c	2022-07-26 14:53:05.612739671 +0800
+@@ -7,6 +7,7 @@
+ # include "hrot_ifc.h"
+ #include "u-boot/sha256.h"
+ #include "u-boot/rsa.h"
++#include "asm/arch-aspeed/crypto.h"
+ #ifdef CONFIG_SPX_FEATURE_UBOOT_VALIDATE_SUPPORT
+ 	#define UBOOT_VALIDATE		1
+ #else
+@@ -23,12 +24,33 @@
+ #endif
+ #define BOOTERROR_IDENTIFIER "$err01$"
+ 
+-static sha256_context ctx;
++#ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_HASH_SHA512
++#define HASH_TYPE "sha512"
++#elif defined(CONFIG_SPX_FEATURE_SECURE_BOOT_HASH_SHA384)
++#define HASH_TYPE "sha384"
++#else
++#define HASH_TYPE "sha256"
++#endif
++
++struct hash_algo *algo;
++void *ctx_hw;             
+ static UINT32 boot_fmh_location,product_info_offset=0;
+ static char placeToHash[HASH_BLK_SIZE];
+ 
++
+ #ifdef CONFIG_SPL_BUILD
+ #ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
++static int read_prop(const char *key_val, int offset, int size){
++        int t=0;
++        int val = 0;
++        int tmp =0;
++        int count = size;
++        for(t = size+offset-1; t >= offset; t--){
++                tmp = key_val[t];
++                val = val + (tmp << ((--count)*8));
++        }
++        return val;
++}
+ void spl_put(const char *data) {
+     char buff[256] = {0};
+     int retval = -1;
+@@ -47,8 +69,21 @@
+ }
+ int hrot_start_spl(void)
+ {
++    int ret =0;
+     spl_put("SPL signature verification.\r\n");
+-	sha256_starts(&ctx);
++    struct udevice *dev;
++
++    if (IS_ENABLED(CONFIG_ASPEED_HACE) &&
++        uclass_get_device_by_driver(UCLASS_MISC,
++                                    DM_GET_DRIVER(aspeed_hace),
++                                    &dev)) {
++            debug("Warning: HACE initialization failure\n");
++    }    
++
++    ret = hash_progressive_lookup_algo(HASH_TYPE, &algo);
++    if (ret==0)
++        algo->hash_init(algo, &ctx_hw);
++
+     unsigned long flashsize=0,SectorCount=0;
+     unsigned long SectorSize=0;
+     int i=0;
+@@ -167,7 +202,7 @@
+                 }
+                 else{
+                         hash_start = startaddress + location + 0x10000;
+-                	size_to_hash = fmhLocation + SIZE_OF_UBOOT_FMH - 0x10000;
++                	size_to_hash = fmhLocation - 0x10000;
+                 }
+ 		stopHash = (size_to_hash+hash_start);
+                 while(hash_start < stopHash)
+@@ -190,11 +225,19 @@
+ 							// Start with FmhLocation + 0x32 offset exclude 4 Byte Module_Checksum
+ 							memset(&hash_data[50], 0, 4);
+ 						}
+-
+-                        sha256_update(&ctx, hash_data, hs_size);
++                 
++                        algo->hash_update(algo, ctx_hw, hash_data,hs_size, 0);
+                         hash_start += hs_size;
+                 }
+-
++                if(ModType == MODULE_BOOTLOADER ){
++                    memcpy(placeToHash,(UINT32*)fmhLocation,SIZE_OF_UBOOT_FMH);
++                    hash_data = (unsigned char*)placeToHash;
++                    if(hash_data == NULL){
++                            spl_put("ERROR setting hash data!\r\n");
++                            return 1;
++                    }
++                    algo->hash_update(algo, ctx_hw, hash_data, SIZE_OF_UBOOT_FMH,0);     
++                } 
+ 	}
+         return 0;
+ }
+@@ -215,9 +258,9 @@
+         int ret =0;
+ 		int sig_length;
+ 		char identifier[8];
+-
+-        sha256_finish(&ctx, output);
+-
++        int key_num_bits;
++        char string_buff[64];
++        algo->hash_finish(algo, ctx_hw, output, algo->digest_size);
+ 
+         if(0){
+         	linebuf[0]=linebuf[0];
+@@ -289,7 +332,10 @@
+                 printf("%s", key_data);
+                 printf("%s", sig);
+         }
+-        ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);
++        key_num_bits=read_prop(key_data, 256, 2);
++        snprintf(string_buff,64,"Checking hash for %s,rsa%d \n",HASH_TYPE,key_num_bits );
++        spl_put(string_buff);
++        ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);      
+         return ret;
+ }
+ #else
+@@ -297,7 +343,6 @@
+ {
+ 	if(0)
+ 	{
+-		ctx=ctx;
+ 		boot_fmh_location=boot_fmh_location;
+ 		product_info_offset=product_info_offset;
+ 		placeToHash[0]=placeToHash[0];
+@@ -309,19 +354,24 @@
+ #else
+ 
+ #include <hash.h>
+-struct hash_algo *algo;
+-void *ctx_hw;
++
++static int read_prop(const char *key_val, int offset, int size){
++        int t=0;
++        int val = 0;
++        int tmp =0;
++        int count = size;
++        for(t = size+offset-1; t >= offset; t--){
++                tmp = key_val[t];
++                val = val + (tmp << ((--count)*8));
++        }
++        return val;
++}
+ void
+ hrot_start(){
+     int ret = 0;
+-    if(0)
+-    {
+-        ctx=ctx;
+-    }
+-    ret = hash_progressive_lookup_algo("sha256", &algo);
++    ret = hash_progressive_lookup_algo(HASH_TYPE, &algo);
+     if (ret==0)
+         algo->hash_init(algo, &ctx_hw);
+-    //sha256_starts(&ctx);
+     return;
+ }
+ int
+@@ -404,7 +454,6 @@
+ 							memset(&hash_data[50], 0, 4);
+ 						}
+                         algo->hash_update(algo, ctx_hw, hash_data,hs_size, 0);
+-                        //sha256_update(&ctx, hash_data, hs_size);
+                         hash_start += hs_size;
+                 }
+ 
+@@ -432,7 +481,7 @@
+ 		int sig_length;
+ 		char identifier[8];
+ 		struct spi_flash *flash;
+-	
++	   int key_num_bits;
+ 		flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
+ 							CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
+ 		if (flash == NULL) 
+@@ -441,7 +490,6 @@
+ 			hang();
+ 		}
+         algo->hash_finish(algo, ctx_hw, output, algo->digest_size);
+-        //sha256_finish(&ctx, output);
+ 
+ #ifndef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+ 	    rc = spi_flash_read(flash,keyInfo, KEY_INFO_LENGTH*4, linebuf);
+@@ -507,11 +555,8 @@
+ 
+         char *key_data = (char *)buf;
+         unsigned char *sig = (unsigned char *)buf1;
+-        
+-        if(0){
+-                printf("%s", key_data);
+-                printf("%s", sig);
+-        }
++        key_num_bits=read_prop(key_data, 256, 2);
++        printf("Checking hash for %s,rsa%d \n",HASH_TYPE,key_num_bits );
+         ret = rsa_get_pub_key_uboot_verify(key_data, sig, sig_length, output, size);
+         return ret;
+ }

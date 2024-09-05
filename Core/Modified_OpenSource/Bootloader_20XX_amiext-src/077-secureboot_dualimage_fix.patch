@@ -1,0 +1,153 @@
+--- uboot.old/oem/ami/fmh/hrot_ifc.h	2024-02-26 13:48:48.990789397 +0800
++++ uboot/oem/ami/fmh/hrot_ifc.h	2024-02-26 14:13:10.402160500 +0800
+@@ -4,8 +4,16 @@
+ 
+ typedef unsigned long   UINT32;
+ void hrot_start(void);
++#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++int hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 ModSize, UINT32 fmhLocation, unsigned long startaddress, int image);
++#else
+ int hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 ModSize, UINT32 fmhLocation, unsigned long startaddress);
++#endif
++#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++int hrot_finish(unsigned long startaddress, int image);
++#else
+ int hrot_finish(unsigned long startaddress);
++#endif
+ extern int rsa_get_pub_key_uboot_verify(const char *key_val, unsigned char *enc_hash, unsigned int enc_hash_len, unsigned char *hash, unsigned int hash_len);
+ 
+ #endif
+
+--- uboot.old/oem/ami/fmh/hrotcore.c	2024-02-26 13:48:42.218804542 +0800
++++ uboot/oem/ami/fmh/hrotcore.c	2024-02-26 14:12:09.512512856 +0800
+@@ -374,8 +374,13 @@
+         algo->hash_init(algo, &ctx_hw);
+     return;
+ }
++#if defined CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++int
++hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 AllocSize, UINT32 fmhLocation, unsigned long startaddress, int image){
++#else
+ int
+ hrot_update(unsigned short ModType, void *ModName, UINT32 location, UINT32 AllocSize, UINT32 fmhLocation, unsigned long startaddress){
++#endif
+ 
+ 	int hs_size=HASH_BLK_SIZE;
+ 	UINT32 stopHash;
+@@ -383,6 +388,9 @@
+         int rc = 0;
+ 	UINT32 hash_start, size_to_hash;
+ 	struct spi_flash *flash;
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++        int flash_select = 0;
++#endif
+ 
+ #ifdef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+         char identifier[8],buf[8];  
+@@ -404,11 +412,24 @@
+         }    
+ 
+ #endif 
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++       /* In case of Dedicated SPI - Select SPI based on the image to boot*/
++       /* If Image 1 - SPI0, else
++        * If Image 2 - SPI1 */
++       if (image == 2){
++               flash_select = 1;
++       }
++#endif
+ 	if((ModType == MODULE_BOOTLOADER) && (strncmp((char *)ModName,"boot",sizeof("boot")) == 0)){
+ 		boot_fmh_location = fmhLocation;
+ 	}
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++       flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, flash_select,
++                        CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
++#else
+ 	flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
+                         CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
++#endif
+     if (flash == NULL) 
+     {
+         puts("\nspi_flash_probe failed");
+@@ -466,8 +487,13 @@
+ #define FWIMG_IDENTIFIER "$fwimg$"
+ #define END_IDENTIFIER   "$end$"
+ 
++#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++int
++hrot_finish(unsigned long startaddress, int image){
++#else
+ int
+ hrot_finish(unsigned long startaddress){
++#endif
+         unsigned char output [65];
+ #ifndef CONFIG_SPX_FEATURE_SIGN_COT_SUPPORT
+         UINT32 keyInfo = startaddress + boot_fmh_location - KEY_INFO_LENGTH;
+@@ -482,8 +508,23 @@
+ 		char identifier[8];
+ 		struct spi_flash *flash;
+ 	   int key_num_bits;
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++        int flash_select = 0;
++        
++        /*In case of Dedicated SPI - Select SPI based on the image to boot*/
++        /* If Image 1 - SPI0, else
++         * If Image 2 - SPI1 */
++        if (2 == image) {
++            flash_select = 1;
++        }
++#endif
++#ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++       flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, flash_select,
++                                                       CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
++#else
+ 		flash = spi_flash_probe(CONFIG_ENV_SPI_BUS, CONFIG_ENV_SPI_CS,
+ 							CONFIG_ENV_SPI_MAX_HZ, CONFIG_ENV_SPI_MODE);
++#endif
+ 		if (flash == NULL) 
+ 		{
+ 			puts("\nspi_flash_probe failed");
+
+--- uboot.old/oem/ami/fmh/cmd_fmh.c	2024-02-26 13:48:24.678856926 +0800
++++ uboot/oem/ami/fmh/cmd_fmh.c	2024-02-26 14:23:48.159187178 +0800
+@@ -1433,6 +1433,9 @@
+ 	char *bootselect = NULL;
+ #endif
+ #endif
++#if defined CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT && ( defined CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK )
++       int image = 0; // variable to store the image to be used for boot
++#endif
+ 	unsigned long gb_used_flash_size_ln=0;
+ 	if(0)
+ 	{
+@@ -1583,7 +1586,14 @@
+ 		mod = &(fmh->Module_Info);
+ 	
+ 	#ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
++		#if defined CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
++                /* In case of dedicated SPI, SPI need to be selected based on image to boot
++                 * so passing image to boot also to hrot_update() incase of dedicated SPI */
++                image = imagetoboot;
++                retval = hrot_update(mod->Module_Type, mod->Module_Name, le32_to_host(mod->Module_Location), le32_to_host(fmh->FMH_AllocatedSize), le32_to_host(fmh->FMH_Location), startaddress, image);
++		#else
+                 retval = hrot_update(mod->Module_Type, mod->Module_Name, le32_to_host(mod->Module_Location), le32_to_host(fmh->FMH_AllocatedSize), le32_to_host(fmh->FMH_Location), startaddress);
++		#endif
+                 if(retval){
+ 		#ifdef CONFIG_SPX_FEATURE_FAIL_SAFE_BOOTING
+ 			while(true)
+@@ -1821,7 +1831,15 @@
+ 
+ #endif
+         #ifdef CONFIG_SPX_FEATURE_SECURE_BOOT_SUPPORT
++		#if defined (CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
++                /* In case of dedicated SPI, SPI need to be selected based on image to boot
++                 * so passing image to boot also to hrot_finish() incase of dedicated SPI 
++                 */
++                image = imagetoboot;
++                retval = hrot_finish(startaddress, image);
++		#else
+                 retval = hrot_finish(startaddress);
++		#endif
+                 if(retval){
+                         printf("Signature verification failed, halting boot!\n\n");
+ 		#ifdef CONFIG_SPX_FEATURE_FAIL_SAFE_BOOTING

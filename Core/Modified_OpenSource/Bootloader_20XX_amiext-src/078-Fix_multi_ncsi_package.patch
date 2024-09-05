@@ -1,0 +1,54 @@
+diff -Naur uboot.org/oem/ami/ncsi/ncsistart.c uboot/oem/ami/ncsi/ncsistart.c
+--- uboot.org/oem/ami/ncsi/ncsistart.c	2024-04-19 19:35:11.602873388 +0800
++++ uboot/oem/ami/ncsi/ncsistart.c	2024-04-19 19:38:40.406366506 +0800
+@@ -36,7 +36,7 @@
+ extern void GetMACAddr(UINT8 *MACAddr);
+ extern int  GetDefaultPort(void);
+ 
+-#define MAX_CHANNELS 4
++#define MAX_CHANNELS 32
+ 
+ typedef struct
+ {	
+@@ -182,6 +182,12 @@
+ 		PackageID = ChannelInfo[i].PackageID;
+ 		ChannelID = ChannelInfo[i].ChannelID;
+ 
++		if(PackageID > MAX_PACKAGE_ID)
++			continue;
++		
++		if(ChannelID > MAX_CHANNEL_ID)
++			continue;		
++		
+ 		/* Issue Select Package with Hw Arbit Disable*/
+ 		if (NCSI_Issue_SelectPackage(PackageID,1) != 0)
+ 		{
+@@ -246,7 +252,7 @@
+ 			printf("NCSI:%d.%d Enable AEN Failed\n",PackageID, ChannelID);	
+ 			continue;
+ 		}
+-
++#if 0
+ 		/* Enable Auto Negotiation */
+ 		if (NCSI_Issue_SetLink((UINT8)PackageID,(UINT8)ChannelID,1,0,0) != 0)
+ 		{
+@@ -260,7 +266,7 @@
+ 			/* Wait for one second for Set Link to complete */
+ 			udelay(1000*1000);
+ 		}
+-
++#endif
+ 
+ 		/* Set this channel info is setup */
+ 		ChannelInfo[i].Valid = 1;
+@@ -316,7 +322,10 @@
+ 		else
+ 		{
+ 			if (EnableChannelOnLink(PackageID,ChannelID) != 0)
++			{
++				NCSI_Issue_DeSelectPackage(PackageID);
+ 				continue;
++			}
+ 		}
+ 
+ 		/* Only one channel should be enable at a time */

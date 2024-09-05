@@ -1,0 +1,110 @@
+--- uboot/oem/ami/fmh/cmd_fmh.c	2023-04-04 09:44:40.513839132 +0530
++++ uboot/oem/ami/fmh/cmd_fmh.c	2023-04-03 20:03:48.014595191 +0530
+@@ -55,6 +55,9 @@
+ #define IMG1_index_val  0
+ #define IMG2_index_val  1
+ 
++#define HEXA 'H'
++#define DECI 'D'
++
+ typedef struct
+ {
+     u8 major_ver;
+@@ -268,10 +271,19 @@
+     unsigned long flashsize=0,SectorCount=0;
+     unsigned long SectorSize=0;
+     int i=0;
++    int j=0;
++    int k=0;
++    int ret=0;
++    u8 Aux_Format = 0;
++    int aux_ver_length = 0;
+     FMH	*fmh;
+     unsigned char Name[9] = {0};
++    unsigned char Aux_Version_HEX[16] = {0};
++    unsigned long Aux_Version_DECI = 0;
++    char *aux_tmp = NULL;
+     MODULE_INFO *mod;
+     long SkipSize;
++
+ #ifdef CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK
+     int cs=0;
+     for(cs=0; cs < CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS ; cs++)
+@@ -313,15 +325,37 @@
+             mod = &(fmh->Module_Info);
+             strncpy((char *)Name,(char *)mod->Module_Name,8);
+             Name[8]=0;
+-            printf("Name    : %s\n",Name);
++	    
++	    Aux_Format = 0;	
++	    aux_ver_length = (int)strlen((char *)mod->Module_Ver_Aux);
++	
++	    if((mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xee || (mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xdd)
++	    {
++		Aux_Format = ((mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xee)? HEXA : DECI ;
++		
++		for (k = 0, j = 0; (k < aux_ver_length - 1) && (j <  (sizeof(Aux_Version_HEX) - 1)) ; k++, j += 2)
++        	{
++          		ret = snprintf((char*)Aux_Version_HEX + j, sizeof(Aux_Version_HEX), "%02x", mod->Module_Ver_Aux[k]);
++			if(ret < 0)
++				printf("Error in Aux Version conversion\n");
++        	}
++	       	Aux_Version_HEX[j] = '\0';
++		
++		if(Aux_Format == DECI)
++		{
++			Aux_Version_DECI = strtoul((char *)Aux_Version_HEX, &aux_tmp, 16);
++	        }
++	    }
++        
++	    printf("Name    : %s\n",Name);
+ 
+             if( FMH_MAJOR==1 && FMH_MINOR>=7 )
+-                printf("Ver     : %d.%02d.%.6s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
++                (Aux_Format == HEXA) ? printf("Ver     : %d.%02d.0x%s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,Aux_Version_HEX): (Aux_Format == DECI) ? printf("Ver     : %d.%02d.%lu\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,Aux_Version_DECI):printf("Ver     : %d.%02d.%s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
+             else if( FMH_MAJOR==1 && FMH_MINOR==6 )
+                 printf("Ver     : %d.%02d.%.2s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
+             else
+                 printf("Ver     : %d.%02d\n",mod->Module_Ver_Major,mod->Module_Ver_Minor);
+-
++            
+             printf("Type    : 0x%04x\n",le16_to_host(mod->Module_Type));
+             printf("Flags   : 0x%04x\n",le16_to_host(mod->Module_Flags));
+             printf("Size    : 0x%08x\n",le32_to_host(mod->Module_Size));
+@@ -390,10 +424,34 @@
+         mod = &(fmh->Module_Info);
+         strncpy((char *)Name,(char *)mod->Module_Name,8);
+         Name[8]=0;
+-        printf("Name    : %s\n",Name);
++
++	Aux_Format = 0;	
++	aux_ver_length = (int)strlen((char *)mod->Module_Ver_Aux);
++	
++	if((mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xee || (mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xdd)
++	{
++		Aux_Format = ((mod->Module_Ver_Aux[aux_ver_length - 1]) == 0xee)? HEXA : DECI ;
++		
++		for (k = 0, j = 0; (k < aux_ver_length - 1) && (j <  (sizeof(Aux_Version_HEX) - 1)) ; k++, j += 2)
++        	{
++          		ret = snprintf((char*)Aux_Version_HEX + j, sizeof(Aux_Version_HEX), "%02x", mod->Module_Ver_Aux[k]);
++			if(ret < 0)
++				printf("Error in Aux Version conversion\n");
++        	}
++	       	Aux_Version_HEX[j] = '\0';
++		
++		if(Aux_Format == DECI)
++		{
++			Aux_Version_DECI = strtoul((char *)Aux_Version_HEX, &aux_tmp, 16);
++		}
++	}
++        
++	printf("Name    : %s\n",Name);
+         
+         if( FMH_MAJOR==1 && FMH_MINOR>=7 )
+-            printf("Ver     : %d.%02d.%.6s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
++	{
++            (Aux_Format == HEXA) ? printf("Ver     : %d.%02d.0x%s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,Aux_Version_HEX): (Aux_Format == DECI) ? printf("Ver     : %d.%02d.%lu\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,Aux_Version_DECI):printf("Ver     : %d.%02d.%s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
++	}
+         else if( FMH_MAJOR==1 && FMH_MINOR==6 )
+             printf("Ver     : %d.%02d.%.2s\n",mod->Module_Ver_Major,mod->Module_Ver_Minor,mod->Module_Ver_Aux);
+         else

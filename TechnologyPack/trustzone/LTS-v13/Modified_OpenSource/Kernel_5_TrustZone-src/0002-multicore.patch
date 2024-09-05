@@ -1,0 +1,27 @@
+diff -Naur linux.org/arch/arm/kernel/head.S linux/arch/arm/kernel/head.S
+--- linux.org/arch/arm/kernel/head.S	2021-11-19 14:38:37.661387266 -0500
++++ linux/arch/arm/kernel/head.S	2021-11-19 14:46:08.477815361 -0500
+@@ -374,6 +374,9 @@
+ 	 * as it has already been validated by the primary processor.
+ 	 */
+ 
++	ldr  r4, =CONFIG_OPTEE_OS_ENTRY_ADDRESS
++	blx  r4
++
+  ARM_BE8(setend	be)				@ ensure we are in BE8 mode
+ 
+ #ifdef CONFIG_ARM_VIRT_EXT
+diff -Naur linux.org/drivers/tee/optee/Kconfig linux/drivers/tee/optee/Kconfig
+--- linux.org/drivers/tee/optee/Kconfig	2021-11-19 14:38:54.285563824 -0500
++++ linux/drivers/tee/optee/Kconfig	2021-11-19 14:46:27.529990212 -0500
+@@ -15,3 +15,10 @@
+ 	help
+ 	  This sets the number of private shared memory pages to be
+ 	  used by OP-TEE TEE driver.
++
++config OPTEE_OS_ENTRY_ADDRESS
++	hex "Optee OS Entry Address"
++	default 0xA1000000
++	depends on OPTEE
++	help
++	  Optee entry address should match optee-core in reserved memory of dts file

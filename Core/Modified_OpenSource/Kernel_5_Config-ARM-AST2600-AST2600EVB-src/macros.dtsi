@@ -1,0 +1,92 @@
+/* Contains Device Tree Mappings for PRJ file Macros */
+#include "../../../../../include/projdef.h"
+/{
+ami_macros{
+			compatible = "non_dt_devices";
+			#address-cells = <0x1>;
+			#size-cells = <0x1>;
+			ranges;
+#if defined(CONFIG_SPX_FEATURE_GLOBAL_DUAL_IMAGE_SUPPORT) && defined(CONFIG_SPX_FEATURE_SW_FAILSAFE_BOOT)
+			flash_macros{
+					global-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_START>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_START
+					global-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE
+					global-erase-block-size = <CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE
+					global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+					global-used-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START>;  //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START=0x0
+					global-used-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE=0x4000000
+			};
+			uboot-macros{
+					global-uboot-monitor-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE=0x100000
+					global-uboot-env-start	= <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START>;	//CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START=0xF0000
+					global-uboot-env-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE=0x10000
+			};
+			#if defined(CONFIG_SPX_FEATURE_GLOBAL_CONF_SIZE)
+			conf_macros{
+					global-conf-size = <CONFIG_SPX_FEATURE_GLOBAL_CONF_SIZE>;   //CONFIG_SPX_FEATURE_GLOBAL_CONF_SIZE
+			};
+			#endif
+
+#elif defined(CONFIG_SPX_FEATURE_GLOBAL_DUAL_IMAGE_SUPPORT) && defined(CONFIG_SPX_FEATURE_HW_FAILSAFE_BOOT)
+                        flash_macros{
+                                        global-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_START>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_START
+                                        global-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE
+                                        global-erase-block-size = <CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE
+			#if defined(CONFIG_SPX_FEATURE_DEDICATED_SPI_FLASH_BANK)
+                                        global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+			#elif defined(CONFIG_SPX_FEATURE_SINGLE_SPI_ABR)
+					global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+			#endif
+                                        global-used-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START>;  //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START=0x0
+                                        global-used-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE=0x4000000
+                        };
+                        uboot-macros{
+                                        global-uboot-monitor-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE=0x100000
+                                        global-uboot-env-start  = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START=0xF0000
+                                        global-uboot-env-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE=0x10000
+                        };
+#elif defined(CONFIG_SPX_FEATURE_HW_EMMC_BOOT_ANY)
+			flash_macros{
+                                        global-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_START>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_START
+                                        global-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE>;   //CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE
+                                        global-erase-block-size = <CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE
+                                        global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+                                        global-used-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START=0x0
+                                        global-used-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE=0x4000000
+                        };
+                        uboot-macros{
+                                        global-uboot-monitor-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE=0x100000
+                                        global-uboot-env-start  = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START=0xF0000
+                                        global-uboot-env-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE=0x10000
+                        };
+#elif defined(CONFIG_SPX_FEATURE_MMC_BOOT_ANY)
+			flash_macros{
+                                        global-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_START>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_START
+                                        global-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE
+                                        global-erase-block-size = <CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE
+                                        global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+                                        global-used-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START>;  //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START=0x0
+                                        global-used-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE=0x4000000
+                        };
+                        uboot-macros{
+                                        global-uboot-monitor-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE=0x100000
+                                        global-uboot-env-start  = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START=0xF0000
+                                        global-uboot-env-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE=0x10000
+                        };
+			
+#else
+			flash_macros{
+                                        global-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_START>;  //CONFIG_SPX_FEATURE_GLOBAL_FLASH_START
+                                        global-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE>;   //CONFIG_SPX_FEATURE_GLOBAL_FLASH_SIZE
+                                        global-erase-block-size = <CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_ERASE_BLOCK_SIZE
+                                        global-flash-banks = <CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS>; //CONFIG_SPX_FEATURE_GLOBAL_FLASH_BANKS=1
+                                        global-used-flash-start = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_START=0x0
+                                        global-used-flash-size = <CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_USED_FLASH_SIZE=0x4000000
+                        };
+                        uboot-macros{
+                                        global-uboot-monitor-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_MONITOR_SIZE=0x100000
+                                        global-uboot-env-start  = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_START=0xF0000
+                                        global-uboot-env-size = <CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE>; //CONFIG_SPX_FEATURE_GLOBAL_UBOOT_ENV_SIZE=0x10000
+                        };
+#endif
+		};
+};

@@ -1,0 +1,229 @@
+diff -Nuar a/applets/applet_tables.c b/applets/applet_tables.c
+--- a/applets/applet_tables.c	2024-04-10 16:08:35.024154928 +0530
++++ b/applets/applet_tables.c	2024-04-10 16:22:04.232522276 +0530
+@@ -141,7 +141,10 @@
+ 		line_old[0] = 0;
+ 		fp = fopen(argv[2], "r");
+ 		if (fp) {
+-			fgets(line_old, sizeof(line_old), fp);
++			if (NULL == fgets(line_old, sizeof(line_old), fp)) {
++				fclose(fp);
++				return 1;
++			}	
+ 			fclose(fp);
+ 		}
+ 		sprintf(line_new, "#define NUM_APPLETS %u\n", NUM_APPLETS);
+diff -Nuar a/applets/usage.c b/applets/usage.c
+--- a/applets/usage.c	2024-04-10 16:09:02.416425642 +0530
++++ b/applets/usage.c	2024-04-10 16:23:48.485632236 +0530
+@@ -39,7 +39,7 @@
+ 
+ int main(void)
+ {
+-	int i;
++	int i, ret;
+ 	int num_messages = sizeof(usage_array) / sizeof(usage_array[0]);
+ 
+ 	if (num_messages == 0)
+@@ -48,8 +48,11 @@
+ 	qsort(usage_array,
+ 		num_messages, sizeof(usage_array[0]),
+ 		compare_func);
+-	for (i = 0; i < num_messages; i++)
+-		write(STDOUT_FILENO, usage_array[i].usage, strlen(usage_array[i].usage) + 1);
++	for (i = 0; i < num_messages; i++) {
++		ret = write(STDOUT_FILENO, usage_array[i].usage, strlen(usage_array[i].usage) + 1);
++		if (ret == strlen(usage_array[i].usage) + 1)
++			ret = 0;
++	}
+ 
+-	return 0;
++	return ret;
+ }
+diff -Nuar a/applets/usage_pod.c b/applets/usage_pod.c
+--- a/applets/usage_pod.c	2024-04-10 16:09:24.164641543 +0530
++++ b/applets/usage_pod.c	2024-04-10 16:24:39.406175680 +0530
+@@ -71,7 +71,7 @@
+ 		} else {
+ 			printf(", ");
+ 		}
+-		printf(usage_array[i].aname);
++		printf("%s", usage_array[i].aname);
+ 		col += len2;
+ 	}
+ 	printf("\n\n");
+diff -Nuar a/include/platform.h b/include/platform.h
+--- a/include/platform.h	2024-04-10 16:10:29.001289899 +0530
++++ b/include/platform.h	2024-04-10 16:25:14.266548159 +0530
+@@ -261,8 +261,7 @@
+ 
+ /*----- Kernel versioning ------------------------------------*/
+ 
+-#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
+-
++#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + ((c) > 255 ? 255 : (c)))
+ 
+ /* ---- Miscellaneous --------------------------------------- */
+ 
+diff -Nuar a/libbb/lineedit.c b/libbb/lineedit.c
+--- a/libbb/lineedit.c	2024-04-10 16:11:38.601992980 +0530
++++ b/libbb/lineedit.c	2024-04-10 16:26:54.003674567 +0530
+@@ -1231,6 +1231,7 @@
+ 		/* Use 2nd half of match_buf as scratch space - see (**) */
+ 		char *command = match_buf + MAX_LINELEN;
+ 		int len = save_string(command, MAX_LINELEN);
++		char tmp_buf[MAX_LINELEN * sizeof(int16_t)];
+ 		/* Have space to place the match? */
+ 		/* cursor_mb + (len_found - match_pfx_len) + (len - cursor_mb) */
+ 		if ((int)(len_found - match_pfx_len + len) < MAX_LINELEN) {
+@@ -1241,7 +1242,8 @@
+ 			strcpy(&command[cursor_mb], chosen_match + match_pfx_len);
+ 			len = load_string(command);
+ 			/* add match and tail */
+-			sprintf(&command[cursor_mb], "%s%s", chosen_match + match_pfx_len, match_buf);
++			sprintf (tmp_buf, "%s", match_buf);
++			sprintf(&command[cursor_mb], "%s%s", chosen_match + match_pfx_len, tmp_buf);
+ 			command_len = load_string(command);
+ 			/* write out the matched command */
+ 			/* paranoia: load_string can return 0 on conv error,
+diff -Nuar a/loginutils/login.c b/loginutils/login.c
+--- a/loginutils/login.c	2024-04-10 16:12:41.638635317 +0530
++++ b/loginutils/login.c	2024-04-10 16:28:10.364552918 +0530
+@@ -370,7 +370,7 @@
+ 	telnet login always gives the argv[1] = -h and normal login pass the argument according
+ 	to user options example: "login -f user" or login*/
+ 	if ((NULL == argv[1]) || (0 != strcmp("-h", argv[1]))){
+-		memcpy (hostname, "127.0.0.1", sizeof (hostname));
++		strncpy (hostname, "127.0.0.1", sizeof (hostname));
+ 		clearenv();
+ 	}
+ 	else if (NULL != argv[2]) {
+@@ -674,4 +674,5 @@
+ 	return 0;
+ #endif
+ 	/* return EXIT_FAILURE; - not reached */
++	return 0;
+ }
+diff -Nuar a/networking/inetd.c b/networking/inetd.c
+--- a/networking/inetd.c	2024-04-10 16:13:38.167215315 +0530
++++ b/networking/inetd.c	2024-04-10 16:31:44.766990546 +0530
+@@ -408,11 +408,13 @@
+ 
+ static void block_CHLD_HUP_ALRM(sigset_t *m)
+ {
++	sigset_t new;
++	sigemptyset(&new);
+ 	sigemptyset(m);
+-	sigaddset(m, SIGCHLD);
+-	sigaddset(m, SIGHUP);
+-	sigaddset(m, SIGALRM);
+-	sigprocmask(SIG_BLOCK, m, m); /* old sigmask is stored in m */
++	sigaddset(&new, SIGCHLD);
++	sigaddset(&new, SIGHUP);
++	sigaddset(&new, SIGALRM);
++	sigprocmask(SIG_BLOCK, &new, m); /* old sigmask is stored in m */
+ }
+ 
+ static void restore_sigmask(sigset_t *m)
+diff -Nuar a/networking/udhcp/common.h b/networking/udhcp/common.h
+--- a/networking/udhcp/common.h	2024-04-15 16:49:18.600177389 +0530
++++ b/networking/udhcp/common.h	2024-04-16 14:42:48.716506247 +0530
+@@ -51,7 +51,7 @@
+ #define DHCP_PKT_SNAME_LEN_STR "64"
+ #define DHCP_PKT_FILE_LEN_STR "128"
+ 
+-struct ip_udp_dhcp_packet {
++struct __attribute__((packed, aligned(4))) ip_udp_dhcp_packet {
+ 	struct iphdr ip;
+ 	struct udphdr udp;
+ 	struct dhcp_packet data;
+diff -Nuar a/networking/udhcp/dhcpc.c b/networking/udhcp/dhcpc.c
+--- a/networking/udhcp/dhcpc.c	2024-04-10 16:14:58.752047843 +0530
++++ b/networking/udhcp/dhcpc.c	2024-04-10 16:35:21.525423951 +0530
+@@ -875,10 +875,12 @@
+ 	int bytes;
+ 	struct ip_udp_dhcp_packet packet;
+ 	uint16_t check;
++	uint16_t * check_packet;
+ 	unsigned char cmsgbuf[CMSG_LEN(sizeof(struct tpacket_auxdata))];
+ 	struct iovec iov;
+ 	struct msghdr msg;
+ 	struct cmsghdr *cmsg;
++	struct iphdr ip_local;
+ 
+ 	/* used to use just safe_read(fd, &packet, sizeof(packet))
+ 	 * but we need to check for TP_STATUS_CSUMNOTREADY :(
+@@ -931,7 +933,8 @@
+ 	/* verify IP checksum */
+ 	check = packet.ip.check;
+ 	packet.ip.check = 0;
+-	if (check != inet_cksum((uint16_t *)&packet.ip, sizeof(packet.ip))) {
++	memcpy(&ip_local, &packet.ip, sizeof(packet.ip));
++	if (check != inet_cksum((uint16_t *)&ip_local, sizeof(packet.ip))) {
+ 		log1("Bad IP header checksum, ignoring");
+ 		return -2;
+ 	}
+@@ -956,9 +959,16 @@
+ 	packet.ip.tot_len = packet.udp.len; /* yes, this is needed */
+ 	check = packet.udp.check;
+ 	packet.udp.check = 0;
+-	if (check && check != inet_cksum((uint16_t *)&packet, bytes)) {
+-		log1("Packet with bad UDP checksum received, ignoring");
+-		return -2;
++	//check_packet = (uint16_t *)&packet;
++	check_packet = calloc(bytes, sizeof(uint16_t));
++	if (check_packet != NULL) {
++		memcpy(check_packet, &packet, bytes * sizeof(uint16_t));
++		if (check && check != inet_cksum(check_packet, bytes)) {
++			log1("Packet with bad UDP checksum received, ignoring");
++			free (check_packet);
++			return -2;
++		}
++		free (check_packet);
+ 	}
+  skip_udp_sum_check:
+ 
+diff -Nuar a/procps/top.c b/procps/top.c
+--- a/procps/top.c	2024-04-10 16:18:05.433997450 +0530
++++ b/procps/top.c	2024-04-10 16:37:00.634529282 +0530
+@@ -595,7 +595,7 @@
+ 	};
+ 
+ 	top_status_t *s;
+-	char vsz_str_buf[8];
++	char vsz_str_buf[9];
+ 	unsigned long total_memory = display_header(scr_width, &lines_rem); /* or use total_vsz? */
+ 	/* xxx_shift and xxx_scale variables allow us to replace
+ 	 * expensive divides with multiply and shift */
+@@ -893,7 +893,7 @@
+ #if ENABLE_FEATURE_USE_TERMIOS
+ static unsigned handle_input(unsigned scan_mask, unsigned interval)
+ {
+-	struct pollfd pfd[1];
++	//struct pollfd pfd[1];
+ 
+ 	if (option_mask32 & OPT_EOF) {
+ 		/* EOF on stdin ("top </dev/null") */
+@@ -901,8 +901,8 @@
+ 		return scan_mask;
+ 	}
+ 
+-	pfd[0].fd = 0;
+-	pfd[0].events = POLLIN;
++	//pfd[0].fd = 0;
++	//pfd[0].events = POLLIN;
+ 
+ 	while (1) {
+ 		int32_t c;
+diff -Nuar a/shell/ash.c b/shell/ash.c
+--- a/shell/ash.c	2024-04-10 16:19:13.834717679 +0530
++++ b/shell/ash.c	2024-04-10 16:37:42.750997903 +0530
+@@ -8453,7 +8453,7 @@
+ 			n->nbinary.ch1,
+ 			(flags | ((is_or >> 1) - 1)) & EV_TESTED
+ 		);
+-		if (!exitstatus == is_or)
++		if ((!exitstatus) == is_or)
+ 			break;
+ 		if (!evalskip) {
+ 			n = n->nbinary.ch2;

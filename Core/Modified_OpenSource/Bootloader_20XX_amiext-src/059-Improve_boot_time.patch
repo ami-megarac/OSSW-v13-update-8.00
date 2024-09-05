@@ -1,0 +1,94 @@
+diff -Naur uboot_org/drivers/net/ftgmac100.c uboot/drivers/net/ftgmac100.c
+--- uboot_org/drivers/net/ftgmac100.c	2022-06-21 15:04:10.466932153 +0800
++++ uboot/drivers/net/ftgmac100.c	2022-06-21 15:01:59.296121992 +0800
+@@ -228,16 +228,21 @@
+ 	return 0;
+ }
+ 
+-static int ftgmac100_phy_init(struct udevice *dev)
++static int ftgmac100_phy_init(struct udevice *dev, int ncsi)
+ {
+ 	struct ftgmac100_data *priv = dev_get_priv(dev);
+ 	struct phy_device *phydev;
+ 	int ret;
+ 
+-	phydev = phy_connect(priv->bus, priv->phy_addr, dev, priv->phy_mode);
+-	if (!phydev)
+-		return -ENODEV;
+-
++	if(ncsi){		
++		phydev = phy_connect(priv->bus, 32, dev, priv->phy_mode);
++	}
++	else
++	{
++		phydev = phy_connect(priv->bus, priv->phy_addr, dev, priv->phy_mode);
++		if (!phydev)
++			return -ENODEV;
++	}
+ 	if (!priv->ncsi_mode)
+ 		phydev->supported &= PHY_GBIT_FEATURES;
+ 	if (priv->max_speed) {
+@@ -636,7 +641,7 @@
+ 	struct eth_pdata *pdata = dev_get_platdata(dev);
+ 	struct ftgmac100_data *priv = dev_get_priv(dev);
+ 	const char *phy_mode;
+-	int ret;
++	int ret, i, ncsi = 0;	
+ 
+ 	phy_mode = dev_read_string(dev, "phy-mode");
+ 	priv->ncsi_mode = dev_read_bool(dev, "use-ncsi") ||
+@@ -654,16 +659,34 @@
+ 
+ 	if (priv->ncsi_mode) {
+ 		printf("%s - NCSI detected\n", __func__);
+-	} else {
+-		ret = ftgmac100_mdio_init(dev);
+-		if (ret) {
+-			dev_err(dev, "Failed to initialize mdiobus: %d\n", ret);
+-			goto out;
++	} else {		
++		for(i = 0; i < 4; i++){
++			if(pdata->iobase == ftgmac100_mac_register[i])
++				break;
++		}
++#ifdef CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC3
++		if ( i == 2 ){
++			printf("\nUse NCSI Interface :");
++			ncsi = 1;
++		}
++#endif 		
++	
++#ifdef CONFIG_SPX_FEATURE_NCSI_ACTIVE_MAC4
++		if ( i == 3 ){
++			printf("\nUse NCSI Interface :");
++			ncsi = 1;
++		}
++#endif		
++		if(ncsi == 0){
++			ret = ftgmac100_mdio_init(dev);
++			if (ret) {
++				dev_err(dev, "Failed to initialize mdiobus: %d\n", ret);
++				goto out;
++			}
+ 		}
+-
+ 	}
+ 
+-	ret = ftgmac100_phy_init(dev);
++	ret = ftgmac100_phy_init(dev, ncsi);
+ 	if (ret) {
+ 		dev_err(dev, "Failed to initialize PHY: %d\n", ret);
+ 		goto out;
+diff -Naur uboot_org/drivers/net/phy/phy.c uboot/drivers/net/phy/phy.c
+--- uboot_org/drivers/net/phy/phy.c	2022-06-21 15:04:10.470931996 +0800
++++ uboot/drivers/net/phy/phy.c	2022-06-21 15:01:59.300121834 +0800
+@@ -940,6 +940,9 @@
+ 	phydev = phy_device_create(bus, 0, PHY_NCSI_ID, false, interface);
+ #endif
+ 
++	if(addr == 32)
++		phydev = phy_device_create(bus, 0, PHY_NCSI_ID, false, interface);
++	
+ 	if (!phydev)
+ 		phydev = phy_find_by_mask(bus, mask, interface);
+ 
