@@ -1,0 +1,21 @@
+--- wide-dhcpv6-20080615/addrconf.c	2024-02-27 10:37:08.958689705 +0800
++++ wide-dhcpv6-20080615_mod/addrconf.c	2024-02-27 14:55:18.979708413 +0800
+@@ -386,7 +386,7 @@
+ {
+ 	struct dhcp6_statefuladdr *addr;
+ 	struct sockaddr_in6 sin6;
+-
++	int retVal = 0;
+ 	addr = &sa->addr;
+ 	memset(&sin6, 0, sizeof(sin6));
+ 	sin6.sin6_family = AF_INET6;
+@@ -398,6 +398,8 @@
+ 	if (ipv6_prefix_length == 0) {
+ 		return (ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, 128, addr->pltime, addr->vltime));
+ 	} else {
+-		return (ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, ipv6_prefix_length, addr->pltime, addr->vltime));
++		retVal = ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, ipv6_prefix_length, addr->pltime, addr->vltime);
++		ipv6_prefix_length=0;
++		return retVal;
+ 	}
+ }

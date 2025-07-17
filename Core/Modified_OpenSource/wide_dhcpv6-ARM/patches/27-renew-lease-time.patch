@@ -1,0 +1,34 @@
+--- wide-dhcpv6-20080615/common.c	2023-01-06 14:40:57.621166441 +0800
++++ wide-dhcpv6-20080615_mod/common.c	2023-01-06 17:30:26.557411873 +0800
+@@ -3263,19 +3263,23 @@
+ #endif
+ 
+ 	if (ioctl(s, ioctl_cmd, &req)) {
+-		ddprintf(LOG_NOTICE, FNAME, "failed to %s an address on %s: %s",
+-		    cmdstr, ifname, strerror(errno));
+-		close(s);
+-		return (-1);
++		if (errno != EEXIST) {
++			ddprintf(LOG_NOTICE, FNAME, "failed to %s an address on %s: %s(%d)",
++				cmdstr, ifname, strerror(errno), errno);
++			close(s);
++			return (-1);
++		} // if
+ 	}
+ 
+ #ifdef __sun__
+ 	memcpy(&req.lifr_addr, addr, sizeof (*addr));
+ 	if (ioctl(s, SIOCSLIFADDR, &req) == -1) {
+-		ddprintf(LOG_NOTICE, FNAME, "failed to %s new address on %s: %s",
+-		    cmdstr, ifname, strerror(errno));
+-		close(s);
+-		return (-1);
++		if (errno != EEXIST) {
++			ddprintf(LOG_NOTICE, FNAME, "failed to %s new address on %s: %s",
++				cmdstr, ifname, strerror(errno));
++			close(s);
++			return (-1);
++		} // if
+ 	}
+ #endif
+ 

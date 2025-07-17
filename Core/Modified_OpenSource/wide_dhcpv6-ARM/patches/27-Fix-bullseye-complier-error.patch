@@ -1,0 +1,54 @@
+diff -Naur wide-dhcpv6-20080615/common.h wide-dhcpv6-20080615_new/common.h
+--- wide-dhcpv6-20080615/common.h	2022-09-29 18:18:34.976306000 +0800
++++ wide-dhcpv6-20080615_new/common.h	2022-09-29 20:05:35.961109000 +0800
+@@ -127,7 +127,7 @@
+ 
+ /* search option for dhcp6_find_listval() */
+ #define MATCHLIST_PREFIXLEN 0x1
+-unsigned int TimingParam[22];
++extern unsigned int TimingParam[22];
+ 
+ 
+ /* common.c */
+diff -Naur wide-dhcpv6-20080615/dhcp6c.c wide-dhcpv6-20080615_new/dhcp6c.c
+--- wide-dhcpv6-20080615/dhcp6c.c	2022-09-29 18:18:56.679794000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c.c	2022-09-30 10:30:33.880421000 +0800
+@@ -93,6 +93,8 @@
+ 
+ #define FQDN_IFC_ENABLE "/var/EnFQDN"
+ 
++unsigned int TimingParam[22];
++
+ int sock;	/* inbound/outbound udp port */
+ int rtsock;	/* routing socket */
+ int ctlsock = -1;		/* control TCP port */
+@@ -1677,6 +1679,9 @@
+ 	dst = *sa6_allagent;
+ 	dst.sin6_scope_id = ifp->linkid;
+ 
++	ddprintf(LOG_DEBUG, FNAME, "send %s to %s",
++	    dhcp6msgstr(dh6->dh6_msgtype), addr2str((struct sockaddr *)&dst));
++	
+ 	if (sendto(sock, buf, len, 0, (struct sockaddr *)&dst,
+ 	    sysdep_sa_len((struct sockaddr *)&dst)) == -1) {
+ 		ddprintf(LOG_ERR, FNAME,
+diff -Naur wide-dhcpv6-20080615/dhcp6c_ia.c wide-dhcpv6-20080615_new/dhcp6c_ia.c
+--- wide-dhcpv6-20080615/dhcp6c_ia.c	2022-09-29 18:18:56.679794000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c_ia.c	2022-09-29 20:01:47.178371000 +0800
+@@ -89,6 +89,7 @@
+ 
+ static char *iastr __P((iatype_t));
+ static char *statestr __P((iastate_t));
++int ipv6_prefix_length;
+ 
+ void
+ update_ia(iatype, ialist, ifp, serverid, authparam)
+diff -Naur wide-dhcpv6-20080615/dhcp6c_ia.h wide-dhcpv6-20080615_new/dhcp6c_ia.h
+--- wide-dhcpv6-20080615/dhcp6c_ia.h	2022-09-29 18:18:56.679794000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c_ia.h	2022-09-29 20:01:49.778311000 +0800
+@@ -56,4 +56,4 @@
+ extern int check_ia __P((iatype_t, struct dhcp6_list *,
+     struct dhcp6_if *, struct duid *, struct authparam *));
+ extern void release_all_ia __P((struct dhcp6_if *));
+-int ipv6_prefix_length;
++extern int ipv6_prefix_length;

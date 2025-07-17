@@ -1,0 +1,87 @@
+diff -Naur wide-dhcpv6-20080615_ori/dhcp6c.c wide-dhcpv6-20080615_new/dhcp6c.c
+--- wide-dhcpv6-20080615_ori/dhcp6c.c	2022-08-03 11:31:10.356112000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c.c	2022-08-02 16:35:40.642437000 +0800
+@@ -1897,6 +1897,20 @@
+ 		}
+ 	}
+ 
++	/* Check IA status*/
++	if (ev->state != DHCP6S_RELEASE) {
++		retval = check_ia(IATYPE_PD, &optinfo->iapd_list, ifp,
++		    &optinfo->serverID, ev->authparam);	
++		if(retval != DH6OPT_STCODE_SUCCESS)
++			return (-1);
++		
++		retval = check_ia(IATYPE_NA, &optinfo->iana_list, ifp,
++		    &optinfo->serverID, ev->authparam);	
++		if(retval != DH6OPT_STCODE_SUCCESS)
++			return (-1);
++	}
++	
++
+ 	if (ev->state != DHCP6S_SOLICIT ||
+ 	    (ifp->send_flags & DHCIFF_RAPID_COMMIT) || infreq_mode) {
+ 		/*
+diff -Naur wide-dhcpv6-20080615_ori/dhcp6c_ia.c wide-dhcpv6-20080615_new/dhcp6c_ia.c
+--- wide-dhcpv6-20080615_ori/dhcp6c_ia.c	2022-08-03 11:31:02.853448000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c_ia.c	2022-08-02 16:41:25.157919000 +0800
+@@ -280,6 +280,48 @@
+ 	}
+ }
+ 
++int
++check_ia(iatype, ialist, ifp, serverid, authparam)
++	iatype_t iatype;
++	struct dhcp6_list *ialist;
++	struct dhcp6_if *ifp;
++	struct duid *serverid;
++	struct authparam *authparam;
++{
++	struct dhcp6_listval *iav, *siav;	
++	int ret = DH6OPT_STCODE_SUCCESS;
++	
++	for (iav = TAILQ_FIRST(ialist); iav; iav = TAILQ_NEXT(iav, link)) {
++		/* Check IA configuration information */
++		for (siav = TAILQ_FIRST(&iav->sublist); siav;
++		    siav = TAILQ_NEXT(siav, link)) {
++			switch (siav->type) {
++			case DHCP6_LISTVAL_PREFIX6:
++				//Do nothing
++				break;
++			case DHCP6_LISTVAL_STATEFULADDR6:
++				//Do nothing
++				break;
++			case DHCP6_LISTVAL_STCODE:
++				ddprintf(LOG_INFO, FNAME,
++				    "status code for %s-%lu: %s",
++				    iastr(iatype), iav->val_ia.iaid,
++				    dhcp6_stcodestr(siav->val_num16));				
++				if(siav->val_num16 == DH6OPT_STCODE_NOADDRSAVAIL)
++					ret = DH6OPT_STCODE_NOADDRSAVAIL;
++				if(siav->val_num16 == DH6OPT_STCODE_NOPREFIXAVAIL)
++					ret = DH6OPT_STCODE_NOPREFIXAVAIL;				
++				break;
++			default:
++				ddprintf(LOG_ERR, FNAME, "impossible case");
++				goto nextia;
++			}
++		}	  nextia:
++		;
++	}
++	return ret;
++}
++
+ static int
+ update_authparam(ia, authparam)
+ 	struct ia *ia;
+diff -Naur wide-dhcpv6-20080615_ori/dhcp6c_ia.h wide-dhcpv6-20080615_new/dhcp6c_ia.h
+--- wide-dhcpv6-20080615_ori/dhcp6c_ia.h	2022-08-03 11:31:02.855074000 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c_ia.h	2022-08-02 16:32:16.255443000 +0800
+@@ -53,5 +53,7 @@
+ 
+ extern void update_ia __P((iatype_t, struct dhcp6_list *,
+     struct dhcp6_if *, struct duid *, struct authparam *));
++extern int check_ia __P((iatype_t, struct dhcp6_list *,
++    struct dhcp6_if *, struct duid *, struct authparam *));
+ extern void release_all_ia __P((struct dhcp6_if *));
+ int ipv6_prefix_length;

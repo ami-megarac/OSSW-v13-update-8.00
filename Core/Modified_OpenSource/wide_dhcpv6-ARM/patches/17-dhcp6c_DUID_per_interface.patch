@@ -1,0 +1,363 @@
+diff -Naur wide-dhcpv6-20080615_orig/common.c wide-dhcpv6-20080615_new/common.c
+--- wide-dhcpv6-20080615_orig/common.c	2019-09-09 12:12:00.778262720 +0530
++++ wide-dhcpv6-20080615_new/common.c	2019-09-09 13:15:14.035469332 +0530
+@@ -998,7 +998,7 @@
+ 	u_int16_t len = 0, hwtype;
+ 	struct dhcp6opt_duid_type3 *dp; /* we only support the type1 DUID */
+ 	char tmpbuf[256];	/* DUID should be no more than 256 bytes */
+-
++	char *iface = NULL;
+ 	if ((fp = fopen(idfile, "r")) == NULL && errno != ENOENT)
+ 		ddprintf(LOG_NOTICE, FNAME, "failed to open DUID file: %s",
+ 		    idfile);
+@@ -1011,8 +1011,23 @@
+ 		}
+ 	} else {
+ 		int l;
++		if((iface=(char *)malloc(256)) == NULL)
++		{
++			ddprintf(LOG_ERR, FNAME, "failed to allocate memory");
++			goto fail;
++		}
++		char *dot={"."};
++		iface=strstr(idfile,dot);
++		if(iface!=NULL)
++		{
++			if ((l = gethwid(tmpbuf, sizeof(tmpbuf), iface+1, &hwtype)) < 0) {
++                             ddprintf(LOG_INFO, FNAME,
++                               "failed to get a hardware address");
++                           goto fail;
++                        }
+ 
+-		if ((l = gethwid(tmpbuf, sizeof(tmpbuf), NULL, &hwtype)) < 0) {
++		}
++		else if ((l = gethwid(tmpbuf, sizeof(tmpbuf), NULL, &hwtype)) < 0) {
+ 			ddprintf(LOG_INFO, FNAME,
+ 			    "failed to get a hardware address");
+ 			goto fail;
+@@ -1074,11 +1089,15 @@
+ 
+ 	if (fp)
+ 		fclose(fp);
++	if(iface)
++		free(iface);
+ 	return (0);
+ 
+   fail:
+ 	if (fp)
+ 		fclose(fp);
++	if(iface)
++		free(iface);
+ 	if (duid->duid_id) {
+ 		free(duid->duid_id);
+ 		duid->duid_id = NULL; /* for safety */
+diff -Naur wide-dhcpv6-20080615_orig/dhcp6c.c wide-dhcpv6-20080615_new/dhcp6c.c
+--- wide-dhcpv6-20080615_orig/dhcp6c.c	2019-09-09 12:12:00.778262720 +0530
++++ wide-dhcpv6-20080615_new/dhcp6c.c	2019-09-09 12:45:51.400116579 +0530
+@@ -106,6 +106,8 @@
+ 
+ static const struct sockaddr_in6 *sa6_allagent;
+ static struct duid client_duid;
++static struct duid_iface *g_duid=NULL;
++
+ static char *pid_file = DHCP6C_PIDFILE;
+ 
+ static char *ctlkeyfile = DEFAULT_KEYFILE;
+@@ -119,7 +121,7 @@
+ static inline int get_ifname __P((char **, int *, char *, int));
+ 
+ static void usage __P((void));
+-static void client6_init __P((void));
++static void client6_init __P((int argc,char **argv));
+ static void client6_startall __P((int));
+ static void free_resources __P((struct dhcp6_if *));
+ static void client6_mainloop __P((void));
+@@ -157,6 +159,8 @@
+ 
+ static void init_dhcp6c_timing_conf();
+ 
++static int search_duid(char *iface,struct duid *duid);
++
+ #define MAX_ELAPSED_TIME 0xffff
+ #define MAX_SUPPORTED_TIMING_PARAM 22
+ 
+@@ -169,12 +173,11 @@
+ 	char *progname;
+ 	FILE *pidfp;
+ 	struct dhcp6_if *ifp;
+-	int fd;
++	int fd,i;
+ 
+ #ifndef HAVE_ARC4RANDOM
+ 	srandom(time(NULL) & getpid());
+ #endif
+-
+ 	if ((progname = strrchr(*argv, '/')) == NULL)
+ 		progname = *argv;
+ 	else
+@@ -245,8 +248,8 @@
+ 
+ 	setloglevel(debug);
+ 
+-	client6_init();
+-	while (argc-- > 0) { 
++	client6_init(argc, argv);
++	while (argc-- > 0) {
+ 		if ((ifp = ifinit(argv[0])) == NULL) {
+ 			ddprintf(LOG_ERR, FNAME, "failed to initialize %s",
+ 			    argv[0]);
+@@ -413,20 +416,114 @@
+ 	}
+ }
+ 
++void AddToList(struct duid *duid,char *iface)
++{
++        struct duid_iface *client_if_duid=NULL;
++        struct duid_iface *prev_if_duid=NULL;
++	int retval=-1;
++	if(iface==NULL){
++		ddprintf(LOG_DEBUG, FNAME, "Error: Blank interface");
++		return;
++	}
++	if(g_duid!=NULL)
++	{
++        	client_if_duid=g_duid;
++		for(;client_if_duid!=NULL;client_if_duid=client_if_duid->next)
++		{
++			if(strcmp(client_if_duid->iface,iface)==0)
++			{
++				return;
++			}
++			if(client_if_duid->next ==NULL){
++				prev_if_duid=client_if_duid;
++			}
++		}
++	}
++
++	client_if_duid=(struct duid_iface *)malloc(sizeof(struct duid_iface));
++	if(prev_if_duid != NULL)
++	prev_if_duid->next=client_if_duid;
++	memset(client_if_duid,0,sizeof(struct duid_iface));
++	memcpy(client_if_duid,duid,sizeof(struct duid));
++	retval=snprintf(client_if_duid->iface,64,"%s",iface);
++	if(retval<0 || retval>64)
++	{
++		ddprintf(LOG_DEBUG, FNAME, "Buffer gets truncated\n");
++	}
++	client_if_duid->next=NULL;
++	if(g_duid==NULL)//HEAD NODE
++		g_duid=client_if_duid;
++}
++
++int search_duid(char *iface,struct duid *duid)
++{
++        struct duid_iface *client_if_duid=NULL;
++        int retval=-1;	
++	if(g_duid==NULL)
++	{
++		ddprintf(LOG_DEBUG, FNAME, "Failed to get Globlal DUID\n");
++                return retval;
++	}
++	client_if_duid=g_duid;
++        for(;client_if_duid!=NULL;client_if_duid=client_if_duid->next)
++	{
++		if(strcmp(client_if_duid->iface,iface)==0)
++		{
++			memcpy(duid,&client_if_duid->client_duid,sizeof(struct duid));
++			retval=0;
++			break;
++		}
++	}
++	if(client_if_duid==NULL)
++	{
++		ddprintf(LOG_DEBUG, FNAME, "DUID is not present for Interface:%s\n",iface);
++	}
++	return retval;
++}	
++
+ /*------------------------------------------------------------*/
+ 
+ void
+-client6_init()
++client6_init(argc,argv)
++	int argc;
++        char **argv;
+ {
+ 	struct addrinfo hints, *res;
+ 	static struct sockaddr_in6 sa6_allagent_storage;
+-	int error, on = 1;
+-
+-	/* get our DUID */
+-	if (get_duid(DUID_FILE, &client_duid)) {
+-		ddprintf(LOG_ERR, FNAME, "failed to get a DUID");
++	int error, on = 1,i=0,retval=-1;
++	struct ifaddrs *ifa, *ifap;
++	char *duid_file_ifname=NULL;
++	if((duid_file_ifname=(char *)malloc(256)) == NULL)
++	{
++		ddprintf(LOG_ERR, FNAME, "failed to allocate memory");
++		exit(1);
++	}	
++	int arg_count=argc;
++        if (getifaddrs(&ifap) < 0)
++	{
++		ddprintf(LOG_ERR, FNAME, "getifaddrs : failed");
++		free(duid_file_ifname);
+ 		exit(1);
+ 	}
++        while(i<arg_count){
++           for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
++                if (argv[i] && strcmp(ifa->ifa_name,argv[i]) != 0)
++                        continue;
++                if (ifa->ifa_addr == NULL)
++                        continue;
++	        retval=snprintf(duid_file_ifname,256,"%s.%s",DUID_FILE,argv[i]);
++		if(retval<0||retval>256){
++			ddprintf(LOG_DEBUG, FNAME, "Warning : Buffer Truncated");
++		}
++	        if (get_duid(duid_file_ifname, &client_duid)) {
++		        ddprintf(LOG_DEBUG, FNAME, "Error : Faild to get duid by iface");
++	        }
++	        AddToList(&client_duid,argv[i]);
++	   }//For
++	   i++;
++	}//While for all arguments
++	free(duid_file_ifname);
++	freeifaddrs(ifap);
+ 
+ 	if (dhcp6_ctl_authinit(ctlkeyfile, &ctlkey, &ctldigestlen) != 0) {
+ 		ddprintf(LOG_NOTICE, FNAME,
+@@ -489,6 +586,9 @@
+ 	}
+ #endif
+ 
++        
++
++
+ 	/*
+ 	 * According RFC3315 2.2, only the incoming port should be bound to UDP
+ 	 * port 546.  However, to have an interoperability with some servers,
+@@ -600,6 +700,33 @@
+ 			exit(1); /* initialization failure.  we give up. */
+ 	}
+ }
++static void
++free_duid_list(char *iface)
++{
++	struct duid_iface *client_if_duid=NULL;
++	struct duid_iface *prev_if_duid=NULL;
++	if(g_duid!=NULL)
++        {
++                client_if_duid=g_duid;
++		do{
++			if(strcmp(client_if_duid->iface,iface)==0)
++               		{
++				free(client_if_duid);
++				if(prev_if_duid!=NULL)
++				{
++					prev_if_duid->next=NULL;
++				}
++                        	break;
++                	}
++		        prev_if_duid=client_if_duid;
++			client_if_duid=client_if_duid->next;
++		}while(client_if_duid!=NULL);
++        }
++	else
++	{
++            printf("Node already cleared\n");
++	}
++}
+ 
+ static void
+ free_resources(freeifp)
+@@ -640,6 +767,7 @@
+ 		return;
+ 
+ 	for (ifp = dhcp6_if; ifp; ifp = ifp->next) {
++		free_duid_list(ifp->ifname);
+ 		/*
+ 		 * Check if we have an outstanding event.  If we do, we cannot
+ 		 * exit for now.
+@@ -1329,7 +1457,7 @@
+ 	struct dhcp6_optinfo optinfo;
+ 	ssize_t optlen, len;
+ 	struct dhcp6_eventdata *evd;
+-
++	int retval=-1;
+ 	ifp = ev->ifp;
+ 
+ 	dh6 = (struct dhcp6 *)buf;
+@@ -1398,6 +1526,12 @@
+ 	}
+ 
+ 	/* client ID */
++        retval=search_duid(ev->ifp->ifname,&client_duid);
++	if(retval!=0)
++	{
++		ddprintf(LOG_ERR, FNAME, "failed to copy Client DUID ID");
++		goto end;
++	}
+ 	if (duidcpy(&optinfo.clientID, &client_duid)) {
+ 		ddprintf(LOG_ERR, FNAME, "failed to copy client ID");
+ 		goto end;
+@@ -1674,6 +1808,7 @@
+ 	struct dhcp6_event *ev;
+ 	struct dhcp6_eventdata *evd;
+ 	struct authparam *authparam = NULL, authparam0;
++	int retval=-1;
+ 
+ 	/* find the corresponding event based on the received xid */
+ 	ev = find_event_withid(ifp, ntohl(dh6->dh6_xid) & DH6_XIDMASK);
+@@ -1695,6 +1830,14 @@
+ 		ddprintf(LOG_INFO, FNAME, "no client ID option");
+ 		return (-1);
+ 	}
++        
++        retval=search_duid(ifp->ifname,&client_duid);
++	if(retval!=0)
++        {
++                     ddprintf(LOG_ERR, FNAME, "failed to copy Client DUID ID");
++                     printf("failed to copy Client DUID ID %s\n",ifp->ifname);
++		     return (-1);
++        }	
+ 	if (duidcmp(&optinfo->clientID, &client_duid)) {
+ 		ddprintf(LOG_INFO, FNAME, "client DUID mismatch");
+ 		return (-1);
+@@ -1890,7 +2033,7 @@
+ {
+ 	struct dhcp6_listval *lv;
+ 	struct dhcp6_event *ev;
+-	int state;
++	int state,retval=-1;
+ 
+ 	/* find the corresponding event based on the received xid */
+ 	ev = find_event_withid(ifp, ntohl(dh6->dh6_xid) & DH6_XIDMASK);
+@@ -1925,6 +2068,12 @@
+ 		ddprintf(LOG_INFO, FNAME, "no client ID option");
+ 		return (-1);
+ 	}
++
++        retval=search_duid(ifp->ifname,&client_duid);
++        if(retval!=0)
++        {
++                ddprintf(LOG_ERR, FNAME, "failed to copy Client DUID ID %s\n",ifp->ifname);
++        }	
+ 	if (duidcmp(&optinfo->clientID, &client_duid)) {
+ 		ddprintf(LOG_INFO, FNAME, "client DUID mismatch");
+ 		return (-1);
+diff -Naur wide-dhcpv6-20080615_orig/dhcp6.h wide-dhcpv6-20080615_new/dhcp6.h
+--- wide-dhcpv6-20080615_orig/dhcp6.h	2019-09-09 12:20:41.648039770 +0530
++++ wide-dhcpv6-20080615_new/dhcp6.h	2019-09-09 12:20:16.027954225 +0530
+@@ -125,6 +125,11 @@
+ 	char *duid_id;		/* variable length ID value (must be opaque) */
+ };
+ 
++struct duid_iface{
++	struct duid client_duid;
++	char iface[127];
++	struct duid_iface *next;
++};
+ struct dhcp6_vbuf {		/* generic variable length buffer */
+ 	int dv_len;
+ 	caddr_t dv_buf;

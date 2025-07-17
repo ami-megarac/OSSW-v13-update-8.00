@@ -1,0 +1,10 @@
+--- wide-dhcpv6-20080615/addrconf.c	2021-01-05 08:11:35.732484062 +0000
++++ wide-dhcpv6-20080615/addrconf_new.c	2021-01-05 08:03:35.263790753 +0000
+@@ -159,6 +159,7 @@
+ 		sa->addr.addr = addr->addr;
+ 		sa->ctl = iac_na;
+ 		TAILQ_INSERT_TAIL(&iac_na->statefuladdr_head, sa, link);
++		system("touch -m /tmp/autoipv6notify");                  /*Implemented to notify redfish when stateful ipv6 is leased*/
+ 		sacreate = 1;
+ 	}
+ 
