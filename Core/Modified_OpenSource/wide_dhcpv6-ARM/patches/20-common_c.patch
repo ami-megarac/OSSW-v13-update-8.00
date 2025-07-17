@@ -1,0 +1,34 @@
+--- wide-dhcpv6-20080615_ori/common.c	2020-03-04 11:46:29.652709142 +0800
++++ wide-dhcpv6-20080615_new/common.c	2020-03-04 17:05:05.037281419 +0800
+@@ -999,9 +999,14 @@
+ 	struct dhcp6opt_duid_type3 *dp; /* we only support the type1 DUID */
+ 	char tmpbuf[256];	/* DUID should be no more than 256 bytes */
+ 	char *iface = NULL;
++	int file_exist = 0; // if 0, DUID file isn't exist
+ 	if ((fp = fopen(idfile, "r")) == NULL && errno != ENOENT)
+ 		ddprintf(LOG_NOTICE, FNAME, "failed to open DUID file: %s",
+ 		    idfile);
++	if((fp = fopen(idfile, "r")) == NULL)
++		file_exist = 0;
++	else
++		file_exist = 1;
+ 
+ 	if (fp) {
+ 		/* decode length */
+@@ -1089,14 +1094,14 @@
+ 
+ 	if (fp)
+ 		fclose(fp);
+-	if(iface)
++	if(iface && file_exist)
+ 		free(iface);
+ 	return (0);
+ 
+   fail:
+ 	if (fp)
+ 		fclose(fp);
+-	if(iface)
++	if(iface && file_exist)
+ 		free(iface);
+ 	if (duid->duid_id) {
+ 		free(duid->duid_id);

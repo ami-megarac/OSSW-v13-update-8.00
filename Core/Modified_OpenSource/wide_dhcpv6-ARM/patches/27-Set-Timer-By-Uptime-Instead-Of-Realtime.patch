@@ -1,0 +1,84 @@
+diff -Naur ./wide-dhcpv6-20080615_ori/dhcp6c.c ./wide-dhcpv6-20080615_new/dhcp6c.c
+--- ./wide-dhcpv6-20080615_ori/dhcp6c.c	2023-09-13 10:12:00.882277192 +0800
++++ ./wide-dhcpv6-20080615_new/dhcp6c.c	2023-09-13 10:11:21.973870090 +0800
+@@ -1566,13 +1566,21 @@
+ 
+ 	/* elapsed time */
+ 	if (ev->timeouts == 0) {
+-		gettimeofday(&ev->tv_start, NULL);
++		struct timespec ts;
++
++		clock_gettime(CLOCK_MONOTONIC, &ts);
++		ev->tv_start.tv_sec = ts.tv_sec;
++		ev->tv_start.tv_usec = ts.tv_nsec / 1000;
++
+ 		optinfo.elapsed_time = 0;
+ 	} else {
+ 		struct timeval now, tv_diff;
++		struct timespec ts;
+ 		long et;
+ 
+-		gettimeofday(&now, NULL);
++		clock_gettime(CLOCK_MONOTONIC, &ts);
++		now.tv_sec = ts.tv_sec;
++		now.tv_usec = ts.tv_nsec / 1000;
+ 		tv_sub(&now, &ev->tv_start, &tv_diff);
+ 
+ 		/*
+diff -Naur ./wide-dhcpv6-20080615_ori/timer.c ./wide-dhcpv6-20080615_new/timer.c
+--- ./wide-dhcpv6-20080615_ori/timer.c	2023-09-13 10:11:54.658214137 +0800
++++ ./wide-dhcpv6-20080615_new/timer.c	2023-09-13 10:11:36.654027343 +0800
+@@ -32,7 +32,8 @@
+ #include <sys/time.h>
+ #include <sys/socket.h>
+ #include <sys/queue.h>
+-
++#include <time.h>
++#include <stdio.h>
+ #include <netinet/in.h>
+ 
+ #include <unistd.h>
+@@ -104,11 +105,13 @@
+ 	struct timeval *tm;
+ 	struct dhcp6_timer *timer;
+ {
++	struct timespec ts;
+ 	struct timeval now;
+ 
+ 	/* reset the timer */
+-	gettimeofday(&now, NULL);
+-
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	now.tv_sec = ts.tv_sec;
++	now.tv_usec = ts.tv_nsec / 1000;
+ 	timeval_add(&now, tm, &timer->tm);
+ 
+ 	/* update the next expiration time */
+@@ -128,9 +131,12 @@
+ {
+ 	static struct timeval returnval;
+ 	struct timeval now;
++	struct timespec ts;
+ 	struct dhcp6_timer *tm, *tm_next;
+ 
+-	gettimeofday(&now, NULL);
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	now.tv_sec = ts.tv_sec;
++	now.tv_usec = ts.tv_nsec / 1000;
+ 
+ 	tm_sentinel = tm_max;
+ 	for (tm = LIST_FIRST(&timer_head); tm; tm = tm_next) {
+@@ -161,9 +167,12 @@
+ 	struct dhcp6_timer *timer;
+ {
+ 	struct timeval now;
++	struct timespec ts;
+ 	static struct timeval returnval; /* XXX */
+ 
+-	gettimeofday(&now, NULL);
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	now.tv_sec = ts.tv_sec;
++	now.tv_usec = ts.tv_nsec / 1000;
+ 	if (TIMEVAL_LEQ(timer->tm, now)) {
+ 		ddprintf(LOG_DEBUG, FNAME,
+ 		    "a timer must be expired, but not yet");

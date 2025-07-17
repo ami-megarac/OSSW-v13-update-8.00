@@ -1,0 +1,75 @@
+--- wide-dhcpv6-20080615_patch18/addrconf.c	2019-10-14 11:15:35.541780610 +0800
++++ wide-dhcpv6-20080615/addrconf.c	2019-10-14 15:21:31.208562997 +0800
+@@ -394,6 +394,9 @@
+ #endif
+ 	sin6.sin6_addr = addr->addr;
+ 
+-	return (ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, 64,
+-	    addr->pltime, addr->vltime));
++	if (ipv6_prefix_length == 0) {
++		return (ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, 128, addr->pltime, addr->vltime));
++	} else {
++		return (ifaddrconf(cmd, sa->dhcpif->ifname, &sin6, ipv6_prefix_length, addr->pltime, addr->vltime));
++	}
+ }
+--- wide-dhcpv6-20080615_patch18/dhcp6c_ia.c	2019-10-14 11:15:35.541780610 +0800
++++ wide-dhcpv6-20080615/dhcp6c_ia.c	2019-10-14 15:32:36.664732291 +0800
+@@ -152,6 +152,7 @@
+ 			case DHCP6_LISTVAL_PREFIX6:
+ 				/* add or update the prefix */
+ 				iapdc = (struct iapd_conf *)iac;
++				ipv6_prefix_length = siav->val_prefix6.plen;
+ 				if (update_prefix(ia, &siav->val_prefix6,
+ 				    &iapdc->iapd_pif_list, ifp, &ia->ctl,
+ 				    callback)) {
+--- wide-dhcpv6-20080615_patch18/dhcp6c_ia.h	2019-10-14 11:15:35.537780606 +0800
++++ wide-dhcpv6-20080615/dhcp6c_ia.h	2019-10-14 15:33:18.748743535 +0800
+@@ -54,3 +54,4 @@
+ extern void update_ia __P((iatype_t, struct dhcp6_list *,
+     struct dhcp6_if *, struct duid *, struct authparam *));
+ extern void release_all_ia __P((struct dhcp6_if *));
++int ipv6_prefix_length;
+--- wide-dhcpv6-20080615_patch18/prefixconf.c	2019-10-14 11:15:35.537780606 +0800
++++ wide-dhcpv6-20080615/prefixconf.c	2019-10-14 15:52:04.752973357 +0800
+@@ -208,12 +208,20 @@
+ 			 * from the delegating router.
+ 			 * [RFC3633 Section 12.1]
+ 			 */
++
++			/* 
++			 * BMC interface is not as home gateway, so each 
++			 * interfaces have to get pd if pd is be set in
++			 * conf file.
++ 			 */
++#if 0
+ 			if (strcmp(pif->ifname, dhcpifp->ifname) == 0) {
+ 				ddprintf(LOG_INFO, FNAME,
+ 				    "skip %s as a prefix interface",
+ 				    dhcpifp->ifname);
+ 				continue;
+ 			}
++#endif
+ 
+ 			add_ifprefix(sp, pinfo, pif);
+ 		}
+@@ -460,11 +468,16 @@
+ 		    "assumption failure on the length of interface ID");
+ 		goto bad;
+ 	}
+-	if (ifpfx->plen + pconf->ifid_len < 0 ||
+-	    ifpfx->plen + pconf->ifid_len > 128) {
++	/* 
++	 * prefix->plen + pconf->sla_len have to < 128, but interface id length
++	 * should not limit to their length, because interface id length 64 
++	 * is for global address, but BMC interface is end-point, should
++	 * directly follow dhcpv6 server assign, not need own recalculate
++	 * new prefix for subnet. 
++	 */
++	if (ifpfx->plen < 0 || ifpfx->plen > 128) {
+ 		ddprintf(LOG_INFO, FNAME,
+-			"invalid prefix length %d + %d + %d",
+-			prefix->plen, pconf->sla_len, pconf->ifid_len);
++		"Get invalid prefix length %d\n", prefix->plen);
+ 		goto bad;
+ 	}
+ 

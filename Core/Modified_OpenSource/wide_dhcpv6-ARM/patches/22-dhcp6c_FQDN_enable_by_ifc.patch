@@ -1,0 +1,59 @@
+--- wide-dhcpv6-20080615/dhcp6c.c	2021-03-24 13:28:51.574412300 +0800
++++ wide-dhcpv6-20080615_new/dhcp6c.c	2021-03-24 13:40:19.729894600 +0800
+@@ -91,6 +91,8 @@
+ 
+ const dhcp6_mode_t dhcp6_mode = DHCP6_MODE_CLIENT;
+ 
++#define FQDN_IFC_ENABLE "/var/EnFQDN"
++
+ int sock;	/* inbound/outbound udp port */
+ int rtsock;	/* routing socket */
+ int ctlsock = -1;		/* control TCP port */
+@@ -848,6 +850,26 @@
+ 	}
+ }
+ 
++static int isIfcFqdnEnable(const char* ifc){
++       FILE *fp = NULL;
++       char filename[128] = {0};
++       int ret = -1;
++
++       ret = snprintf(filename, sizeof(filename), "%s%s",FQDN_IFC_ENABLE,ifc);
++       if(((unsigned)ret >= sizeof(filename)) || (ret < 0))
++       {
++               ddprintf(LOG_ERR, FNAME, "Buffer overflow in %s\n","isIfcFqdnEnable");
++               return 0;
++       }
++
++       
++       if (fp = fopen(filename, "r")){
++               fclose(fp);
++               return 1;
++       }
++       return 0;
++}
++
+ static inline int
+ get_val32(bpp, lenp, valp)
+ 	char **bpp;
+@@ -1457,7 +1479,7 @@
+ 	struct dhcp6_optinfo optinfo;
+ 	ssize_t optlen, len;
+ 	struct dhcp6_eventdata *evd;
+-	int retval=-1;
++	int retval=-1,fqdn_flag=0;
+ 	ifp = ev->ifp;
+ 
+ 	dh6 = (struct dhcp6 *)buf;
+@@ -1537,8 +1559,10 @@
+ 		goto end;
+ 	}
+ 	
++	fqdn_flag = isIfcFqdnEnable(ev->ifp->ifname);
++
+ 	/* fqdn option*/
+-	if((optinfo.fqdn_type=fqdn_tmp_type)&&(ev->state==DHCP6S_REQUEST || ev->state==DHCP6S_SOLICIT || ev->state== DHCP6S_RENEW ||  ev->state==DHCP6S_REBIND)){
++	if(fqdn_flag&&(optinfo.fqdn_type=fqdn_tmp_type)&&(ev->state==DHCP6S_REQUEST || ev->state==DHCP6S_SOLICIT || ev->state== DHCP6S_RENEW ||  ev->state==DHCP6S_REBIND)){
+ 		optinfo.fqdn.fqdn_name_flag[0]=0x1;
+     	optinfo.fqdn.fqdn_len=strlen(FqdnName);
+     }

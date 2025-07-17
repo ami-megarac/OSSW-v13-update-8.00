@@ -1,0 +1,43 @@
+/*
+@+ Author : Muthuchamy K - AMI
+@+ Description : This is the README file for installation and setup instructions for wide-dhcpv6 client.
+@+ The wide-dhcpv6 client source is taken from the debian website and recompiled for the prefix-length modifications 
+@+ in the client code to change the default value of prefix length of 64 instead of 128.
+@+ This file is about our package architecture of the wide-dhcpv6 source and the client binary. 
+@+
+*/
+
+Source :
+The source file wide-dhcpv6.tar.gz is taken from the debian website http://packages.debian.org/stable/allpackages.
+so we extracted the tar file and applied the patches for our modifications.
+
+Patches : 
+This folder contains the patches for the wide-dhcpv6 client to get the prefix length of 64 by default.
+
+Instructions to compile the source using cross compiler :
+
+	* To compile the source, first extract the wide-dhcpv6 client tar file.
+	* Change the directory to source directory and apply the patch using the below command. 
+		 patch -p1 < patch file > /dev/null
+	* Run the ./configure script file to generate the Makefile.
+	* After generating the makefile, it needs modification to compile with corss compiler. Please refer the Makefile.sample in this
+	  package.
+	  
+	  Note :- Add "-m64" option to CFLAGS while compiling for x86_64 bit architecture in the Makefile. ~Anand
+	* Below flags are needed to be assigned properly according to architecture that we are going to build in Makefile.
+		SYSROOT- Have to specify the proper target directory path for each platform.
+		Eg:- /home/spx/Hornet/workspace/Build/target - ARM platform
+			 /home/spx/Rainier/workspace/Build/targer - for SH4 platform
+		CORSS_COMPILE - Specify the proper cross compiler
+		Eg:- "arm-linux-" - ARM platform
+			 "sh4-linux-" - SH4 platform
+		LIBCPATH - Specify the proper libc path of spx workspace. 
+		Eg:- /home/spx/Hornet/workspace/tools/arm-linux/cc/arm-none-linux-gnueabi/libc/lib - ARM platform
+			 /home/spx/Rainier/workspace/tools/sh4a-linux/cc/sh-linux-gnu/libc/lib		   - SH4 platform
+	* Add the missing Macros of Makefile.sample in your Makefile
+	* Export the cross compiler path using below command.
+		export PATH=$PATH:/home/spx/workspace/tools/sh4a-linux/cc/bin  	- SH4 platform
+		export PATH=$PATH:/home/spx/workspace/tools/arm-linux/cc/bin	- ARM platform
+	
+NOTE: Compare the Makefile.sample with newly generated Makefile and do the modification as mentioned above.
+			   

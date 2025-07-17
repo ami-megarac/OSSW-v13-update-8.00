@@ -1,0 +1,28 @@
+diff -Naur wide-dhcpv6-20080615_old/dhcp6c_script.c wide-dhcpv6-20080615/dhcp6c_script.c
+--- wide-dhcpv6-20080615_old/dhcp6c_script.c	2022-07-21 15:40:59.527270506 +0530
++++ wide-dhcpv6-20080615/dhcp6c_script.c	2022-07-21 15:43:41.651306048 +0530
+@@ -184,7 +184,7 @@
+ 
+ 
+ 	if (ifcount) {
+-		elen = sizeof (interfacename_str) + ifcount + 1;
++		elen = sizeof (interfacename_str) + sizeof(optinfo->ifname);
+ 		if ((s = envp[i++] = malloc(elen)) == NULL) {
+ 			dprintf(LOG_NOTICE, FNAME,
+ 			    "failed to allocate strings for Interface name");
+@@ -192,8 +192,13 @@
+ 			goto clean;
+ 		}
+ 		memset(s, 0, elen);
+-		snprintf(s, elen, "%s=", interfacename_str);
+-			strcat(s,optinfo->ifname);
++		ret=snprintf(s, elen, "%s=%s", interfacename_str,optinfo->ifname);
++		if((ret < 0) || (ret >= elen))
++		{
++			ddprintf(LOG_ERR, FNAME,"Buffer Overflow in function %s",__func__);
++			ret = -1;
++			goto clean;
++		}
+ 	}
+ 
+     

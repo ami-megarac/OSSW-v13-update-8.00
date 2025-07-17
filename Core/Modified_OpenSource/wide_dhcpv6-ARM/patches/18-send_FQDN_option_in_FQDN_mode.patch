@@ -1,0 +1,29 @@
+--- wide-dhcpv6-20080615_ori/common.c	2020-03-04 11:46:29.652709142 +0800
++++ wide-dhcpv6-20080615_new/common.c	2020-03-04 17:05:05.037281419 +0800
+@@ -2277,21 +2277,17 @@
+ 	if(optinfo->fqdn.fqdn_len)
+ 	{
+ 		dnsencode(FqdnName,&(optinfo->fqdn.fqdn_name_flag[1]),127);
++		if ( copy_option(DH6OPT_CLIENT_FQDN, optinfo->fqdn.fqdn_len+2,
++	      	&optinfo->fqdn.fqdn_name_flag,&p, optep, &len) != 0) 
++		{
++			goto fail;
++		}
+ 	}
+ 	else
+ 	{
+ 		--optinfo->fqdn.fqdn_len;
+ 	}
+ 
+-	if ( copy_option(DH6OPT_CLIENT_FQDN, optinfo->fqdn.fqdn_len+2,
+-	      &optinfo->fqdn.fqdn_name_flag,&p, optep, &len) != 0) 
+-	{
+-		goto fail;
+-	}
+-		
+-		
+-
+-
+ 	for (op = TAILQ_FIRST(&optinfo->iana_list); op;
+ 	    op = TAILQ_NEXT(op, link)) {
+ 		int optlen;
